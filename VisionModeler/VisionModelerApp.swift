@@ -9,9 +9,16 @@ import SwiftUI
 
 @main
 struct VisionModelerApp: App {
+    @State private var showImmersive = false
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(showImmersive: $showImmersive)
         }
+
+        ImmersiveSpace(id: "placeSpace") {
+            PlaceModelView()
+        }
+        .immersionStyle(selection: .constant(.mixed), in: .mixed)
     }
 }

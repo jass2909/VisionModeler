@@ -1,26 +1,30 @@
-//
-//  ContentView.swift
-//  VisionModeler
-//
-//  Created by jasmeet singh on 15.11.25.
-//
-
 import SwiftUI
-import RealityKit
-import RealityKitContent
 
 struct ContentView: View {
+    @Environment(\.openImmersiveSpace) var openImmersiveSpace
+
+    @Binding var showImmersive: Bool
+
     var body: some View {
         VStack {
-            Model3D(named: "Scene", bundle: realityKitContentBundle)
-                .padding(.bottom, 50)
+            ModelView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Text("Hello, world!")
+            Button("In Raum platzieren") {
+                showImmersive = true
+            }
+            .padding()
         }
-        .padding()
+        .onChange(of: showImmersive) { _, newValue in
+            if newValue {
+                Task {
+                    await openImmersiveSpace(id: "placeSpace")
+                }
+            }
+        }
     }
 }
 
-#Preview(windowStyle: .automatic) {
-    ContentView()
+#Preview {
+    ContentView(showImmersive: .constant(false))
 }
