@@ -34,6 +34,19 @@ struct PlaceModelView: View {
             model = entity
         }
         .gesture(
+            TapGesture()
+                .targetedToAnyEntity()
+                .onEnded { value in
+                    guard let model else { return }
+                    if isDescendant(value.entity, of: model) {
+                        // Rotate 45 degrees around Y axis
+                        let currentRotation = model.orientation
+                        let delta = simd_quatf(angle: .pi/4, axis: [0,1,0])
+                        model.orientation = delta * currentRotation
+                    }
+                }
+        )
+        .gesture(
             DragGesture(minimumDistance: 0)
                 .targetedToAnyEntity()
                 .onChanged { value in
@@ -71,6 +84,29 @@ struct PlaceModelView: View {
                 .onEnded { _ in
                     grabbedEntity = nil
                     grabbedStartWorldPosition = nil
+                }
+        )
+        .simultaneousGesture(
+            TapGesture()
+                .targetedToAnyEntity()
+                .onEnded { value in
+                    // Determine which entity to rotate (model root if tapped descendant)
+                    let target: Entity
+                    if let model, isDescendant(value.entity, of: model) {
+                        target = model
+                    } else {
+                        var root = value.entity
+                        while let p = root.parent { root = p }
+                        target = root
+                    }
+
+                    // Animate a 15-degree rotation around the Y axis
+                    let angle = Float.pi / 12 // 15 degrees
+                    let delta = simd_quatf(angle: angle, axis: [0, 1, 0])
+
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        target.orientation = target.orientation * delta
+                    }
                 }
         )
     }
