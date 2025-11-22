@@ -6,11 +6,11 @@ struct HighContrastButtonStyle: ButtonStyle {
         Group {
             if enabled {
                 configuration.label
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 100))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 100)
                             .stroke(Color.white, lineWidth: 3)
                     )
                     .shadow(color: .black.opacity(0.95), radius: 0, x: 1, y: 0)
