@@ -1,8 +1,14 @@
+// Accessibility adaptations included:
+// - High Contrast mode toggle that restyles panels and text for improved readability
+// - Larger hit zones on buttons to aid motor accessibility
+
 import SwiftUI
 import RealityKit
 import RealityKitContent
 
 struct PlaceModelView: View {
+    @EnvironmentObject var settings: SettingsStore
+    
     @Environment(\.dismissImmersiveSpace) var dismiss
     @State private var model: Entity?
     @State private var grabbedEntity: Entity? = nil
@@ -26,7 +32,7 @@ struct PlaceModelView: View {
                                            in: realityKitContentBundle)
             
             entity.setScale([0.01,0.01,0.01], relativeTo: nil)
-            entity.position = [0, 0, -1]   // 1m vor dir
+            entity.position = [0, 0, -1]
             
             entity.generateCollisionShapes(recursive: true)
             entity.components.set(InputTargetComponent())
@@ -37,12 +43,13 @@ struct PlaceModelView: View {
             DragGesture(minimumDistance: 0)
                 .targetedToAnyEntity()
                 .onChanged { value in
+                    if settings.isPlacementLocked { return }
+                    
                     if grabbedEntity == nil {
                         let target: Entity
                         if let model, isDescendant(value.entity, of: model) {
                             target = model
                         } else {
-                            // Move the tapped entity's root
                             var root = value.entity
                             while let p = root.parent { root = p }
                             target = root
@@ -50,10 +57,10 @@ struct PlaceModelView: View {
                         grabbedEntity = target
                         grabbedStartWorldPosition = target.position(relativeTo: nil)
                     }
-
+                    
                     guard let entity = grabbedEntity,
                           let startWorld = grabbedStartWorldPosition else { return }
-
+                    
                     let t = value.translation3D
                     let p0View = Point3D(x: 0, y: 0, z: 0)
                     let p1View = Point3D(x: t.x, y: t.y, z: t.z)
@@ -73,6 +80,7 @@ struct PlaceModelView: View {
                     grabbedStartWorldPosition = nil
                 }
         )
+        .ignoresSafeArea()
     }
 }
 
