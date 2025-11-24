@@ -280,7 +280,8 @@ struct ContentView: View {
                             object: nil,
                             userInfo: [
                                 "id": obj.id.uuidString,
-                                "name": obj.name
+                                "name": obj.name,
+                                "url": obj.url?.absoluteString ?? ""
                             ]
                         )
                         pendingPlacement = nil

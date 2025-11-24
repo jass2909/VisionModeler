@@ -77,19 +77,6 @@ struct PlaceModelView: View {
             content.add(worldAnchor)
         }
         .gesture(
-            TapGesture()
-                .targetedToAnyEntity()
-                .onEnded { value in
-                    guard let model else { return }
-                    if isDescendant(value.entity, of: model) {
-                        // Rotate 45 degrees around Y axis
-                        let currentRotation = model.orientation
-                        let delta = simd_quatf(angle: .pi/4, axis: [0,1,0])
-                        model.orientation = delta * currentRotation
-                    }
-                }
-        )
-        .gesture(
             DragGesture(minimumDistance: 0)
                 .targetedToAnyEntity()
                 .onChanged { value in
@@ -131,10 +118,19 @@ struct PlaceModelView: View {
                       let name = userInfo["name"] as? String else { return }
                 Task {
                     do {
-                        // Create entity for requested object
-                        let entity = try await makeEntity(for: name)
-                        // Initial placement ~1m in front (negative z in world space)
+                        let entity: Entity
+
+                        if let urlString = userInfo["url"] as? String,
+                           let url = URL(string: urlString) {
+                            entity = try await Entity.load(contentsOf: url)
+                        } else {
+                            entity = try await makeEntity(for: name)
+                        }
+
+                        entity.generateCollisionShapes(recursive: true)
+                        entity.components.set(InputTargetComponent())
                         entity.position = [0, 0, -1]
+
                         worldAnchor.addChild(entity)
                         placedEntities[id] = entity
                     } catch {
@@ -175,4 +171,3 @@ struct PlaceModelView: View {
         .ignoresSafeArea()
     }
 }
-
