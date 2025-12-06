@@ -1,10 +1,20 @@
 import SwiftUI
+import RealityKit
+import RealityKitContent
+
+struct ObjectPreviewItem: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var url: String?
+}
 
 struct ObjectsView: View {
     @EnvironmentObject var settings: SettingsStore
+    @Environment(\.openWindow) private var openWindow
     @Binding var storedObjects: [ContentView.StoredObject]
     @Binding var showImmersive: Bool
     @Binding var pendingPlacement: ContentView.StoredObject?
+    @State private var previewingObject: ContentView.StoredObject? = nil
     
     var body: some View {
         List {
@@ -33,8 +43,21 @@ struct ObjectsView: View {
                         HStack {
                             Text(obj.name)
                             Spacer()
-                            Text("Place")
-                                .foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                Button {
+                                    openWindow(value: PreviewItem(
+                                        id: obj.id,
+                                        name: obj.name,
+                                        url: obj.url?.absoluteString
+                                    ))
+                                } label: {
+                                    Text("View")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Text("Place")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -102,6 +125,115 @@ struct ObjectsView: View {
                     }
                 }
             }
+        }
+        .sheet(item: $previewingObject) { obj in
+            ModelPreviewView(object: obj)
+                .environmentObject(settings)
+        }
+    }
+}
+
+struct Model3DView: View {
+    let object: ContentView.StoredObject
+
+    var body: some View {
+        // Note: Avoid `Model3D(model:)` which can lead to generic inference errors; prefer `Model3D(url:)` or `Model3D(named:)`.
+        Group {
+            if let url = object.url {
+                // Load from a file URL
+                Model3D(url: url)
+                       .frame(width: 350, height: 350)
+                       .scaleEffect(0.3)
+            } else {
+                switch object.name {
+                case "Cube":
+                    // Use a simple bundled placeholder asset name if available, otherwise fall back to a generated entity
+                    Model3D(named: "CubePlaceholder")
+                        .frame(width: 350, height: 350)
+                        .overlay(alignment: .bottom) {
+                            Text("Cube preview")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.bottom, 8)
+                        }
+                case "Sphere":
+                    Model3D(named: "SpherePlaceholder")
+                        .frame(width: 350, height: 350)
+                        .overlay(alignment: .bottom) {
+                            Text("Sphere preview")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.bottom, 8)
+                        }
+                default:
+                    Text("No model available")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+    }
+}
+
+struct ModelPreviewView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var settings: SettingsStore
+    @Environment(\.openWindow) private var openWindow
+    @State private var previewScale: CGFloat = 1.0
+    @State private var yaw: Angle = .degrees(0)
+    @State private var pitch: Angle = .degrees(0)
+    let object: ContentView.StoredObject
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Model3DView(object: object)
+                    .scaleEffect(previewScale)
+                    .rotation3DEffect(pitch, axis: (x: 1, y: 0, z: 0))
+                    .rotation3DEffect(yaw, axis: (x: 0, y: 1, z: 0))
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let yawSensitivity: Double = 0.4
+                                let pitchSensitivity: Double = 0.4
+                                yaw = .degrees(value.translation.width * yawSensitivity)
+                                pitch = .degrees(-value.translation.height * pitchSensitivity)
+                            }
+                    )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Scale")
+                        Spacer()
+                        Text(String(format: "%.2fx", previewScale))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $previewScale, in: 0.1...3.0, step: 0.05)
+                }
+                .padding(.horizontal)
+            }
+            .navigationTitle(object.name)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {                    
+                    if settings.useHighContrast {
+                        Button(action: { dismiss() }) {
+                            Text("Done").highContrastTextOutline(true)
+                        }
+                        .buttonStyle(HighContrastButtonStyle(enabled: true))
+                    } else {
+                        Button("Done") { dismiss() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("previewScaleChanged"))) { output in
+            guard let userInfo = output.userInfo,
+                  let idString = userInfo["id"] as? String,
+                  let scale = userInfo["scale"] as? CGFloat,
+                  idString == object.id.uuidString else { return }
+            previewScale = scale
         }
     }
 }

@@ -88,7 +88,22 @@ struct ContentView: View {
                                 pendingPlacement = obj
                                 showImmersive = true
                             }
+                        },
+                        addToObjects: { obj in
+                            if let url = obj.url {
+                                let exists = storedObjects.contains { $0.url == url }
+                                if !exists { storedObjects.append(obj) }
+                            } else {
+                                let exists = storedObjects.contains { $0.name == obj.name && $0.url == nil }
+                                if !exists { storedObjects.append(obj) }
+                            }
                         }
+                    )
+                case .objects:
+                    ObjectsView(
+                        storedObjects: $storedObjects,
+                        showImmersive: $showImmersive,
+                        pendingPlacement: $pendingPlacement
                     )
                 case .none:
                     ObjectsView(

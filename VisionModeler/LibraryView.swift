@@ -5,6 +5,7 @@ struct LibraryView: View {
     @Binding var objects: [ContentView.StoredObject]
     var pickDirectory: () -> Void
     var place: (ContentView.StoredObject) -> Void
+    var addToObjects: (ContentView.StoredObject) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +30,10 @@ struct LibraryView: View {
                     HStack {
                         Text(obj.name)
                         Spacer()
+                        Button("Add") {
+                            addToObjects(obj)
+                        }
+                        .buttonStyle(.bordered)
                         Button("Place") {
                             place(obj)
                         }
@@ -54,7 +59,8 @@ struct LibraryView: View {
                 LibraryView(
                     objects: $sampleObjects,
                     pickDirectory: {},
-                    place: { obj in print("Place: \(obj.name)") }
+                    place: { obj in print("Place: \(obj.name)") },
+                    addToObjects: { obj in print("Add: \(obj.name)") }
                 )
             }
         }
