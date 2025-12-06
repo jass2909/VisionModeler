@@ -6,5 +6,6 @@ enum MenuTopic: String, CaseIterable, Identifiable, Hashable {
     case placement = "Placement"
     case library = "Library"
 
+
     var id: String { rawValue }
 }

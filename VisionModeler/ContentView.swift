@@ -23,7 +23,6 @@ struct ContentView: View {
     }
 
     @State private var storedObjects: [StoredObject] = []
-    @State private var showObjectsSheet: Bool = false
     @State private var pendingPlacement: StoredObject? = nil
 
     @State private var pickedDirectory: URL? = nil
@@ -92,10 +91,11 @@ struct ContentView: View {
                         }
                     )
                 case .none:
-                    VStack {
-                        Color.clear
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    ObjectsView(
+                        storedObjects: $storedObjects,
+                        showImmersive: $showImmersive,
+                        pendingPlacement: $pendingPlacement
+                    )
                 }
             }
             .toolbar {
@@ -122,135 +122,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if settings.useHighContrast {
-                        Button(action: { showObjectsSheet = true }) {
-                            Text("Objects").highContrastTextOutline(settings.useHighContrast)
-                        }
-                        .buttonStyle(HighContrastButtonStyle(enabled: true))
-                    } else {
-                        Button(action: { showObjectsSheet = true }) {
-                            Text("Objects")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showObjectsSheet) {
-            NavigationStack {
-                List {
-                    if storedObjects.isEmpty {
-                        Text("No objects yet.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(storedObjects) { obj in
-                            Button {
-                                if showImmersive {
-                                    // Immersive space already open: post placement immediately
-                                    print("[ContentView] Immersive already open, placing \(obj.name) (\(obj.id))")
-                                    NotificationCenter.default.post(
-                                        name: .placeObjectRequested,
-                                        object: nil,
-                                        userInfo: [
-                                            "id": obj.id.uuidString,
-                                            "name": obj.name
-                                        ]
-                                    )
-                                } else {
-                                    // Open immersive space and place after it opens
-                                    pendingPlacement = obj
-                                    showImmersive = true
-                                }
-                                // Close the sheet
-                                showObjectsSheet = false
-                            } label: {
-                                HStack {
-                                    Text(obj.name)
-                                    Spacer()
-                                    Text("Place")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .onDelete { indexSet in
-                            // Send removal requests for any deleted objects so the immersive space can remove them
-                            let idsToRemove = indexSet.map { storedObjects[$0].id }
-                            idsToRemove.forEach { id in
-                                NotificationCenter.default.post(
-                                    name: .removeObjectRequested,
-                                    object: nil,
-                                    userInfo: [
-                                        "id": id.uuidString
-                                    ]
-                                )
-                            }
-                            storedObjects.remove(atOffsets: indexSet)
-                        }
-                    }
-                }
-                .navigationTitle("Objects")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        if settings.useHighContrast {
-                            Button(action: { showObjectsSheet = false }) {
-                                Text("Close").highContrastTextOutline(settings.useHighContrast)
-                            }
-                            .buttonStyle(HighContrastButtonStyle(enabled: true))
-                        } else {
-                            Button(action: { showObjectsSheet = false }) {
-                                Text("Close")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
 
-                    ToolbarItem(placement: .topBarTrailing) {
-                        EditButton()
-                    }
-
-                    ToolbarItem(placement: .bottomBar) {
-                        HStack {
-                            if settings.useHighContrast {
-                                Button {
-                                    storedObjects.append(StoredObject(name: "Cube"))
-                                } label: {
-                                    Text("Add Cube").highContrastTextOutline(true)
-                                }
-                                .buttonStyle(HighContrastButtonStyle(enabled: true))
-
-                                Button {
-                                    storedObjects.append(StoredObject(name: "Sphere"))
-                                } label: {
-                                    Text("Add Sphere").highContrastTextOutline(true)
-                                }
-                                .buttonStyle(HighContrastButtonStyle(enabled: true))
-
-                                Button {
-                                    storedObjects.append(StoredObject(name: "Imported Model"))
-                                } label: {
-                                    Text("Import Placeholder").highContrastTextOutline(true)
-                                }
-                                .buttonStyle(HighContrastButtonStyle(enabled: true))
-                            } else {
-                                Button("Add Cube") {
-                                    storedObjects.append(StoredObject(name: "Cube"))
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button("Add Sphere") {
-                                    storedObjects.append(StoredObject(name: "Sphere"))
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button("Import Placeholder") {
-                                    storedObjects.append(StoredObject(name: "Imported Model"))
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-                    }
-                }
             }
         }
         .fileImporter(isPresented: $showingDirectoryImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
