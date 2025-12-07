@@ -145,7 +145,7 @@ struct ContentView: View {
             case .success(let urls):
                 if let dir = urls.first {
                     pickedDirectory = dir
-                    loadObjects(from: dir)
+                    importDirectory(dir)
                 }
             case .failure(let error):
                 print("[ContentView] Directory import failed: \(error)")
@@ -198,6 +198,43 @@ struct ContentView: View {
             print("[ContentView] Failed to list directory: \(error)")
         }
     }
+
+    private func importDirectory(_ directory: URL) {
+        directoryObjects.removeAll()
+
+        let fm = FileManager.default
+        let appFolder = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let supportedExts: Set<String> = ["usdz", "reality"]
+
+        do {
+            let contents = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+
+            for url in contents {
+                if supportedExts.contains(url.pathExtension.lowercased()) {
+                    let dst = appFolder.appendingPathComponent(url.lastPathComponent)
+
+                    if fm.fileExists(atPath: dst.path) {
+                        try? fm.removeItem(at: dst)
+                    }
+
+                    do {
+                        try fm.copyItem(at: url, to: dst)
+                        directoryObjects.append(
+                            StoredObject(name: url.lastPathComponent, url: dst)
+                        )
+                    } catch {
+                        print("[ContentView] Failed copying \(url.lastPathComponent): \(error)")
+                    }
+                }
+            }
+
+            if directoryObjects.isEmpty {
+                print("[ContentView] No supported model files found in imported directory: \(directory)")
+            }
+        } catch {
+            print("[ContentView] Failed to read picked directory: \(error)")
+        }
+    }
 }
 
 
@@ -205,4 +242,3 @@ struct ContentView: View {
     ContentView(showImmersive: .constant(false))
         .environmentObject(SettingsStore())
 }
-
