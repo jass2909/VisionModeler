@@ -11,9 +11,11 @@ struct ObjectPreviewItem: Identifiable, Codable, Hashable {
 struct ObjectsView: View {
     @EnvironmentObject var settings: SettingsStore
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Binding var storedObjects: [ContentView.StoredObject]
     @Binding var showImmersive: Bool
     @Binding var pendingPlacement: ContentView.StoredObject?
+    @Binding var placedIDs: Set<UUID>
     @State private var previewingObject: ContentView.StoredObject? = nil
     
     var body: some View {
@@ -22,45 +24,51 @@ struct ObjectsView: View {
                 Text("No objects yet.").foregroundStyle(.secondary)
             } else {
                 ForEach(storedObjects) { obj in
-                    Button {
-                        if showImmersive {
-                            // Immersive space already open: post placement immediately
-                            print("[ObjectsView] Immersive already open, placing \(obj.name) (\(obj.id))")
-                            NotificationCenter.default.post(
-                                name: .placeObjectRequested,
-                                object: nil,
-                                userInfo: [
-                                    "id": obj.id.uuidString,
-                                    "name": obj.name
-                                ]
-                            )
-                        } else {
-                            // Open immersive space and place after it opens
-                            pendingPlacement = obj
-                            showImmersive = true
-                        }
-                    } label: {
-                        HStack {
-                            Text(obj.name)
-                            Spacer()
-                            HStack(spacing: 12) {
+                    HStack {
+                        Text(obj.name)
+                        Spacer()
+                        HStack(spacing: 12) {
+                            if !placedIDs.contains(obj.id) {
                                 Button {
-                                    openWindow(value: PreviewItem(
-                                        id: obj.id,
-                                        name: obj.name,
-                                        url: obj.url?.absoluteString
-                                    ))
+                                    // Mark as placed and route through immersive open + delayed post
+                                    placedIDs.insert(obj.id)
+                                    pendingPlacement = obj
+                                    if !showImmersive { showImmersive = true }
+                                    Task {
+                                        await openImmersiveSpace(id: "placeSpace")
+                                        try? await Task.sleep(nanoseconds: 300_000_000)
+                                        print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
+                                        NotificationCenter.default.post(
+                                            name: .placeObjectRequested,
+                                            object: nil,
+                                            userInfo: [
+                                                "id": obj.id.uuidString,
+                                                "name": obj.name,
+                                                "url": obj.url?.absoluteString ?? "",
+                                                "bookmark": obj.bookmark as Any
+                                            ]
+                                        )
+                                    }
                                 } label: {
-                                    Text("View")
+                                    Text("Place")
                                 }
                                 .buttonStyle(.bordered)
-
-                                Text("Place")
-                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Placed").foregroundStyle(.secondary)
                             }
+
+                            Button {
+                                openWindow(value: PreviewItem(
+                                    id: obj.id,
+                                    name: obj.name,
+                                    url: obj.url?.absoluteString
+                                ))
+                            } label: {
+                                Text("View")
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
                 .onDelete { indexSet in
                     // Send removal requests for any deleted objects so the immersive space can remove them
@@ -75,6 +83,7 @@ struct ObjectsView: View {
                         )
                     }
                     storedObjects.remove(atOffsets: indexSet)
+                    placedIDs.subtract(idsToRemove)
                 }
             }
         }
@@ -242,7 +251,8 @@ struct ModelPreviewView: View {
     ObjectsView(
         storedObjects: .constant([ContentView.StoredObject(name: "Test Cube")]),
         showImmersive: .constant(false),
-        pendingPlacement: .constant(nil)
+        pendingPlacement: .constant(nil),
+        placedIDs: .constant([])
     )
     .environmentObject(SettingsStore())
 }

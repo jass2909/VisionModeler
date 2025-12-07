@@ -34,10 +34,6 @@ struct LibraryView: View {
                             addToObjects(obj)
                         }
                         .buttonStyle(.bordered)
-                        Button("Place") {
-                            place(obj)
-                        }
-                        .buttonStyle(.bordered)
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -68,3 +64,4 @@ struct LibraryView: View {
 
     return LibraryPreviewHost()
 }
+

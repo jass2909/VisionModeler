@@ -20,6 +20,7 @@ struct ContentView: View {
         let id = UUID()
         var name: String
         var url: URL?
+        var bookmark: Data? = nil
     }
 
     @State private var storedObjects: [StoredObject] = []
@@ -28,6 +29,7 @@ struct ContentView: View {
     @State private var pickedDirectory: URL? = nil
     @State private var directoryObjects: [StoredObject] = []
     @State private var showingDirectoryImporter: Bool = false
+    @State private var placedIDs: Set<UUID> = []
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -74,19 +76,26 @@ struct ContentView: View {
                         objects: $directoryObjects,
                         pickDirectory: { showingDirectoryImporter = true },
                         place: { obj in
-                            if showImmersive {
+                            // Always route through immersive open to ensure observers are installed
+                            pendingPlacement = obj
+                            if !showImmersive { showImmersive = true }
+                            Task {
+                                // Ensure immersive space is open (idempotent)
+                                await openImmersiveSpace(id: "placeSpace")
+                                // Small delay to ensure PlaceModelView observers are installed
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                print("[ContentView] Posting placeObjectRequested (Library) for \(obj.name) (\(obj.id))")
                                 NotificationCenter.default.post(
                                     name: .placeObjectRequested,
                                     object: nil,
                                     userInfo: [
                                         "id": obj.id.uuidString,
                                         "name": obj.name,
-                                        "url": obj.url?.absoluteString ?? ""
+                                        "url": obj.url?.absoluteString ?? "",
+                                        "bookmark": obj.bookmark as Any
                                     ]
                                 )
-                            } else {
-                                pendingPlacement = obj
-                                showImmersive = true
+                                pendingPlacement = nil
                             }
                         },
                         addToObjects: { obj in
@@ -103,13 +112,15 @@ struct ContentView: View {
                     ObjectsView(
                         storedObjects: $storedObjects,
                         showImmersive: $showImmersive,
-                        pendingPlacement: $pendingPlacement
+                        pendingPlacement: $pendingPlacement,
+                        placedIDs: $placedIDs
                     )
                 case .none:
                     ObjectsView(
                         storedObjects: $storedObjects,
                         showImmersive: $showImmersive,
-                        pendingPlacement: $pendingPlacement
+                        pendingPlacement: $pendingPlacement,
+                        placedIDs: $placedIDs
                     )
                 }
             }
@@ -168,7 +179,8 @@ struct ContentView: View {
                             userInfo: [
                                 "id": obj.id.uuidString,
                                 "name": obj.name,
-                                "url": obj.url?.absoluteString ?? ""
+                                "url": obj.url?.absoluteString ?? "",
+                                "bookmark": obj.bookmark as Any
                             ]
                         )
                         pendingPlacement = nil
@@ -183,12 +195,27 @@ struct ContentView: View {
     private func loadObjects(from directory: URL) {
         directoryObjects.removeAll()
         let fm = FileManager.default
+        let startedAccess = directory.startAccessingSecurityScopedResource()
+        if !startedAccess {
+            print("[ContentView] Warning: Failed to start security-scoped access for directory: \(directory)")
+        }
+        defer {
+            if startedAccess {
+                directory.stopAccessingSecurityScopedResource()
+                print("[ContentView] Stopped security-scoped access for directory: \(directory.lastPathComponent)")
+            }
+        }
         do {
             let contents = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             let supportedExts: Set<String> = ["usdz", "reality"]
             for url in contents {
                 if supportedExts.contains(url.pathExtension.lowercased()) {
-                    directoryObjects.append(StoredObject(name: url.lastPathComponent, url: url))
+#if os(visionOS)
+                    let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+#else
+                    let bookmark = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+#endif
+                    directoryObjects.append(StoredObject(name: url.lastPathComponent, url: url, bookmark: bookmark))
                 }
             }
             if directoryObjects.isEmpty {
@@ -201,6 +228,17 @@ struct ContentView: View {
 
     private func importDirectory(_ directory: URL) {
         directoryObjects.removeAll()
+
+        let startedAccess = directory.startAccessingSecurityScopedResource()
+        if !startedAccess {
+            print("[ContentView] Warning: Failed to start security-scoped access for directory: \(directory)")
+        }
+        defer {
+            if startedAccess {
+                directory.stopAccessingSecurityScopedResource()
+                print("[ContentView] Stopped security-scoped access for directory: \(directory.lastPathComponent)")
+            }
+        }
 
         let fm = FileManager.default
         let appFolder = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -217,6 +255,11 @@ struct ContentView: View {
                         try? fm.removeItem(at: dst)
                     }
 
+                    let fileAccess = url.startAccessingSecurityScopedResource()
+                    if !fileAccess {
+                        print("[ContentView] Warning: Failed to start security-scoped access for file: \(url.lastPathComponent)")
+                    }
+
                     do {
                         try fm.copyItem(at: url, to: dst)
                         directoryObjects.append(
@@ -224,6 +267,10 @@ struct ContentView: View {
                         )
                     } catch {
                         print("[ContentView] Failed copying \(url.lastPathComponent): \(error)")
+                    }
+
+                    if fileAccess {
+                        url.stopAccessingSecurityScopedResource()
                     }
                 }
             }
@@ -242,3 +289,4 @@ struct ContentView: View {
     ContentView(showImmersive: .constant(false))
         .environmentObject(SettingsStore())
 }
+
