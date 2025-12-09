@@ -302,4 +302,39 @@ struct PlaceModelView: View {
                         entity = try await Entity.load(contentsOf: url)
                     } else {
                         print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
-                        entity = try await make
+                        entity = try await Entity.load(named: name)
+                    }
+
+                    // Ensure the entity is prepared for interactions
+                    entity.generateCollisionShapes(recursive: true)
+                    entity.components.set(InputTargetComponent())
+
+                    // Add entity under worldAnchor and store by id
+                    worldAnchor.addChild(entity)
+                    placedEntities[id] = entity
+                } catch {
+                    print("[PlaceModelView] Failed to place entity for id=\(id) name=\(name): \(error)")
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .removeObjectRequested)) { note in
+             guard let userInfo = note.userInfo,
+                   let id = userInfo["id"] as? String,
+                   let entity = placedEntities[id] else { return }
+
+             print("[PlaceModelView] removeObjectRequested id=\(id)")
+
+             // If currently dragging this entity (or a child), cancel the drag first
+             if let grabbed = grabbedEntity, (entity === grabbed || grabbed.isDescendant(of: entity)) {
+                 grabbedEntity = nil
+                 grabbedStartWorldPosition = nil
+             }
+
+             // Remove from scene immediately
+             entity.removeFromParent()
+
+             // Update state
+             placedEntities.removeValue(forKey: id)
+        }
+    }
+}
