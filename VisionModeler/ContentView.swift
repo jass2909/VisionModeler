@@ -116,13 +116,6 @@ struct ContentView: View {
                             }
                         }
                     )
-                case .objects:
-                    ObjectsView(
-                        storedObjects: $storedObjects,
-                        showImmersive: $showImmersive,
-                        pendingPlacement: $pendingPlacement,
-                        placedIDs: $placedIDs
-                    )
                 case .none:
                     ObjectsView(
                         storedObjects: $storedObjects,
