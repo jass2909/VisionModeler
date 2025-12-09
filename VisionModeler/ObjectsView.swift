@@ -17,6 +17,7 @@ struct ObjectsView: View {
     @Binding var pendingPlacement: ContentView.StoredObject?
     @Binding var placedIDs: Set<UUID>
     @State private var previewingObject: ContentView.StoredObject? = nil
+    @State private var isScanning: Bool = false
     
     var body: some View {
         List {
@@ -108,6 +109,31 @@ struct ObjectsView: View {
             
             ToolbarItem(placement: .bottomBar) {
                 HStack {
+                    Button(isScanning ? "Stop Scanning" : "Scan Surfaces") {
+                        isScanning.toggle()
+                        let wasClosed = !showImmersive
+                        if isScanning && wasClosed {
+                            showImmersive = true
+                        }
+                        
+                        Task {
+                            if isScanning && wasClosed {
+                                await openImmersiveSpace(id: "placeSpace")
+                                // Give the view a moment to initialize and subscribe
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                            }
+                            
+                            // Notify the immersive view
+                            NotificationCenter.default.post(
+                                name: .scanSurfacesToggled,
+                                object: nil,
+                                userInfo: ["enabled": isScanning]
+                            )
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(isScanning ? .red : .blue)
+                    
                     if settings.useHighContrast {
                         Button {
                             if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {

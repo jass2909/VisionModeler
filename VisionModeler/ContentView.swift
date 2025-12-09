@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 extension Notification.Name {
     static let placeObjectRequested = Notification.Name("placeObjectRequested")
     static let removeObjectRequested = Notification.Name("removeObjectRequested")
+    static let scanSurfacesToggled = Notification.Name("scanSurfacesToggled")
 }
 
 struct ContentView: View {
@@ -191,9 +192,11 @@ struct ContentView: View {
             }
         }
         .task {
+            storedObjects = []
             // Load state on startup
             loadLibrary()
             loadPersistedObjects()
+            storedObjects = directoryObjects
         }
         .onChange(of: storedObjects) { _, newValue in
             saveObjects(newValue)
@@ -250,6 +253,7 @@ struct ContentView: View {
                 
                 // Re-import (list files)
                 importDirectory(url)
+                self.storedObjects = self.directoryObjects
             } else {
                  print("[Persistence] Failed to access persisted library URL.")
             }
@@ -315,7 +319,7 @@ struct ContentView: View {
         }
         do {
             let contents = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-            let supportedExts: Set<String> = ["usdz", "reality"]
+            let supportedExts: Set<String> = ["usdz", "reality", ]
             for url in contents {
                 if supportedExts.contains(url.pathExtension.lowercased()) {
 #if os(visionOS)
@@ -394,7 +398,7 @@ struct ContentView: View {
                     }
                 }
             }
-
+            self.storedObjects = self.directoryObjects
             if directoryObjects.isEmpty {
                 print("[ContentView] No supported model files found in imported directory: \(directory)")
             }
