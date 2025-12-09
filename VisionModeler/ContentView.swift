@@ -191,9 +191,11 @@ struct ContentView: View {
             }
         }
         .task {
+            storedObjects = []
             // Load state on startup
             loadLibrary()
             loadPersistedObjects()
+            storedObjects = directoryObjects
         }
         .onChange(of: storedObjects) { _, newValue in
             saveObjects(newValue)
@@ -250,6 +252,7 @@ struct ContentView: View {
                 
                 // Re-import (list files)
                 importDirectory(url)
+                self.storedObjects = self.directoryObjects
             } else {
                  print("[Persistence] Failed to access persisted library URL.")
             }
@@ -394,7 +397,7 @@ struct ContentView: View {
                     }
                 }
             }
-
+            self.storedObjects = self.directoryObjects
             if directoryObjects.isEmpty {
                 print("[ContentView] No supported model files found in imported directory: \(directory)")
             }
