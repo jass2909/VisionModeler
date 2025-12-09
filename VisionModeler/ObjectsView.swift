@@ -97,38 +97,38 @@ struct ObjectsView: View {
                 HStack {
                     if settings.useHighContrast {
                         Button {
-                            storedObjects.append(ContentView.StoredObject(name: "Cube"))
+                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
                         } label: {
                             Text("Add Cube").highContrastTextOutline(true)
                         }
                         .buttonStyle(HighContrastButtonStyle(enabled: true))
                         
                         Button {
-                            storedObjects.append(ContentView.StoredObject(name: "Sphere"))
+                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
                         } label: {
                             Text("Add Sphere").highContrastTextOutline(true)
                         }
                         .buttonStyle(HighContrastButtonStyle(enabled: true))
                         
                         Button {
-                            storedObjects.append(ContentView.StoredObject(name: "Imported Model"))
+                            storedObjects.append(ContentView.StoredObject(name: "Imported Model", url: nil))
                         } label: {
                             Text("Import Placeholder").highContrastTextOutline(true)
                         }
                         .buttonStyle(HighContrastButtonStyle(enabled: true))
                     } else {
                         Button("Add Cube") {
-                            storedObjects.append(ContentView.StoredObject(name: "Cube"))
+                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
                         }
                         .buttonStyle(.bordered)
                         
                         Button("Add Sphere") {
-                            storedObjects.append(ContentView.StoredObject(name: "Sphere"))
+                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
                         }
                         .buttonStyle(.bordered)
                         
                         Button("Import Placeholder") {
-                            storedObjects.append(ContentView.StoredObject(name: "Imported Model"))
+                            storedObjects.append(ContentView.StoredObject(name: "Imported Model", url: nil))
                         }
                         .buttonStyle(.bordered)
                     }
@@ -249,7 +249,7 @@ struct ModelPreviewView: View {
 
 #Preview {
     ObjectsView(
-        storedObjects: .constant([ContentView.StoredObject(name: "Test Cube")]),
+        storedObjects: .constant([ContentView.StoredObject(name: "Test Cube", url: nil)]),
         showImmersive: .constant(false),
         pendingPlacement: .constant(nil),
         placedIDs: .constant([])

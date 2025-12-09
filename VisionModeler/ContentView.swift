@@ -16,11 +16,19 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
 
     // Simple in-memory store of objects for now
-    struct StoredObject: Identifiable, Hashable {
-        let id = UUID()
+    struct StoredObject: Identifiable, Hashable, Codable {
+        let id: UUID
         var name: String
         var url: URL?
         var bookmark: Data? = nil
+        
+        // Add explicit init to allow default UUID
+        init(id: UUID = UUID(), name: String, url: URL?, bookmark: Data? = nil) {
+            self.id = id
+            self.name = name
+            self.url = url
+            self.bookmark = bookmark
+        }
     }
 
     @State private var storedObjects: [StoredObject] = []
@@ -155,8 +163,7 @@ struct ContentView: View {
             switch result {
             case .success(let urls):
                 if let dir = urls.first {
-                    pickedDirectory = dir
-                    importDirectory(dir)
+                    pickDirectory(dir)
                 }
             case .failure(let error):
                 print("[ContentView] Directory import failed: \(error)")
@@ -189,6 +196,114 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        .task {
+            // Load state on startup
+            loadLibrary()
+            loadPersistedObjects()
+        }
+        .onChange(of: storedObjects) { _, newValue in
+            saveObjects(newValue)
+        }
+    }
+    
+    // MARK: - Persistence
+    
+    private func pickDirectory(_ url: URL) {
+        pickedDirectory = url
+        saveLibrary(url)
+        importDirectory(url)
+    }
+    
+    private func saveLibrary(_ url: URL) {
+        // Create a security-scoped bookmark
+        do {
+            #if os(visionOS)
+            let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            #else
+            let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            #endif
+            UserDefaults.standard.set(bookmark, forKey: "persistedLibraryBookmark")
+            print("[Persistence] Saved library bookmark.")
+        } catch {
+            print("[Persistence] Failed to create library bookmark: \(error)")
+        }
+    }
+    
+    private func loadLibrary() {
+        guard let bookmark = UserDefaults.standard.data(forKey: "persistedLibraryBookmark") else { return }
+        do {
+            var isStale = false
+            #if os(visionOS)
+            let url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            #else
+            let url = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
+            #endif
+            
+            if isStale {
+                print("[Persistence] Library bookmark is stale.")
+                // If it's stale, we might need to ask user to pick again, but we can try to use it.
+            }
+            
+            let ok = url.startAccessingSecurityScopedResource()
+            if ok {
+                print("[Persistence] Loaded persisted library: \(url)")
+                pickedDirectory = url
+                // Note: We don't stop accessing immediately if we want to read it, but importDirectory does its own access management.
+                // However, we should keep the variable accessed if we intend to hold it?
+                // Actually `importDirectory` calls startAccessing internally too, which is fine (nested calls work with reference counting).
+                // We'll release here and let importDirectory handle it.
+                url.stopAccessingSecurityScopedResource()
+                
+                // Re-import (list files)
+                importDirectory(url)
+            } else {
+                 print("[Persistence] Failed to access persisted library URL.")
+            }
+        } catch {
+            print("[Persistence] Failed to resolve library bookmark: \(error)")
+        }
+    }
+    
+    private func saveObjects(_ objects: [StoredObject]) {
+        do {
+            let data = try JSONEncoder().encode(objects)
+            UserDefaults.standard.set(data, forKey: "persistedStoredObjects")
+        } catch {
+            print("[Persistence] Failed to encode storedObjects: \(error)")
+        }
+    }
+    
+    private func loadPersistedObjects() {
+        guard let data = UserDefaults.standard.data(forKey: "persistedStoredObjects") else { return }
+        do {
+            var loaded = try JSONDecoder().decode([StoredObject].self, from: data)
+            print("[Persistence] Loaded \(loaded.count) objects from persistence.")
+            
+            // Re-inflate tokens
+            for i in 0..<loaded.count {
+                if let bookmark = loaded[i].bookmark {
+                    do {
+                        var isStale = false
+                        #if os(visionOS)
+                        let url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                        #else
+                        let url = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                        #endif
+                        
+                        // We must start accessing if we want to use it later
+                        // But managing the lifecycle of these access tokens is tricky.
+                        // Usually, you start accessing right before using, and stop after.
+                        // For now, we just resolve the URL. The view or placement logic will call startAccessing again when needed (via the bookmark in userInfo).
+                        loaded[i].url = url
+                    } catch {
+                        print("[Persistence] Failed to resolve object bookmark for \(loaded[i].name): \(error)")
+                    }
+                }
+            }
+            storedObjects = loaded
+        } catch {
+            print("[Persistence] Failed to decode storedObjects: \(error)")
         }
     }
 
@@ -262,9 +377,21 @@ struct ContentView: View {
 
                     do {
                         try fm.copyItem(at: url, to: dst)
-                        directoryObjects.append(
-                            StoredObject(name: url.lastPathComponent, url: dst)
-                        )
+                        
+                        // Create bookmark for the local file if needed, or better, for the original if we want to persist source ref.
+                        // But actually `importDirectory` implies copying to app documents?
+                        // If we copy to app documents, we don't need security scope for the destination.
+                        // But wait, the previous code copied it.
+                        // The user said "persist selected library".
+                        // If "Library" view just shows external files, we need bookmarks.
+                        // If "Objects" list contains copied files, we don't need bookmarks for them (they are in app container).
+                        // Let's create a bookmark for the *source* just in case or just rely on the copied path.
+                        // StoredObject(name: url.lastPathComponent, url: dst) is safe for app restart if dst is in Documents.
+                        
+                        var obj = StoredObject(name: url.lastPathComponent, url: dst)
+                        // If we want to persist the SOURCE bookmark to re-copy later? No need.
+                        
+                        directoryObjects.append(obj)
                     } catch {
                         print("[ContentView] Failed copying \(url.lastPathComponent): \(error)")
                     }
