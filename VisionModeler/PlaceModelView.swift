@@ -302,7 +302,8 @@ struct PlaceModelView: View {
                         entity = try await Entity.load(contentsOf: url)
                     } else {
                         print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
-                        entity = try await Entity.load(named: name)
+                        // Use the internal helper which handles procedural generation for Cube/Sphere
+                        entity = try await makeEntity(for: name)
                     }
 
                     // Ensure the entity is prepared for interactions

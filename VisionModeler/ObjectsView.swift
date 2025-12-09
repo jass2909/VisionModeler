@@ -38,15 +38,28 @@ struct ObjectsView: View {
                                         await openImmersiveSpace(id: "placeSpace")
                                         try? await Task.sleep(nanoseconds: 300_000_000)
                                         print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
+                                        var userInfo: [String: Any] = [
+                                            "id": obj.id.uuidString,
+                                            "name": obj.name,
+                                            "bookmark": obj.bookmark as Any
+                                        ]
+                                        if let url = obj.url {
+                                            userInfo["url"] = url.absoluteString
+                                        } else {
+                                            // Provide a named fallback for bundled placeholders when no URL is available
+                                            switch obj.name {
+                                            case "Cube":
+                                                userInfo["named"] = "CubePlaceholder"
+                                            case "Sphere":
+                                                userInfo["named"] = "SpherePlaceholder"
+                                            default:
+                                                break
+                                            }
+                                        }
                                         NotificationCenter.default.post(
                                             name: .placeObjectRequested,
                                             object: nil,
-                                            userInfo: [
-                                                "id": obj.id.uuidString,
-                                                "name": obj.name,
-                                                "url": obj.url?.absoluteString ?? "",
-                                                "bookmark": obj.bookmark as Any
-                                            ]
+                                            userInfo: userInfo
                                         )
                                     }
                                 } label: {
@@ -97,14 +110,22 @@ struct ObjectsView: View {
                 HStack {
                     if settings.useHighContrast {
                         Button {
-                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                            if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
+                                storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
+                            } else {
+                                storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                            }
                         } label: {
                             Text("Add Cube").highContrastTextOutline(true)
                         }
                         .buttonStyle(HighContrastButtonStyle(enabled: true))
                         
                         Button {
-                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                            if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
+                                storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
+                            } else {
+                                storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                            }
                         } label: {
                             Text("Add Sphere").highContrastTextOutline(true)
                         }
@@ -118,12 +139,20 @@ struct ObjectsView: View {
                         .buttonStyle(HighContrastButtonStyle(enabled: true))
                     } else {
                         Button("Add Cube") {
-                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                            if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
+                                storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
+                            } else {
+                                storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                            }
                         }
                         .buttonStyle(.bordered)
                         
                         Button("Add Sphere") {
-                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                            if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
+                                storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
+                            } else {
+                                storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                            }
                         }
                         .buttonStyle(.bordered)
                         
@@ -156,24 +185,33 @@ struct Model3DView: View {
             } else {
                 switch object.name {
                 case "Cube":
-                    // Use a simple bundled placeholder asset name if available, otherwise fall back to a generated entity
-                    Model3D(named: "CubePlaceholder")
-                        .frame(width: 350, height: 350)
-                        .overlay(alignment: .bottom) {
-                            Text("Cube preview")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.bottom, 8)
-                        }
+                    RealityView { content in
+                        let mesh = MeshResource.generateBox(size: 0.2)
+                        let mat = SimpleMaterial(color: .red, isMetallic: false)
+                        let e = ModelEntity(mesh: mesh, materials: [mat])
+                        content.add(e)
+                    }
+                    .frame(width: 350, height: 350)
+                    .overlay(alignment: .bottom) {
+                        Text("Cube preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 8)
+                    }
                 case "Sphere":
-                    Model3D(named: "SpherePlaceholder")
-                        .frame(width: 350, height: 350)
-                        .overlay(alignment: .bottom) {
-                            Text("Sphere preview")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.bottom, 8)
-                        }
+                    RealityView { content in
+                        let mesh = MeshResource.generateSphere(radius: 0.12)
+                        let mat = SimpleMaterial(color: .blue, isMetallic: false)
+                        let e = ModelEntity(mesh: mesh, materials: [mat])
+                        content.add(e)
+                    }
+                    .frame(width: 350, height: 350)
+                    .overlay(alignment: .bottom) {
+                        Text("Sphere preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 8)
+                    }
                 default:
                     Text("No model available")
                         .foregroundStyle(.secondary)
