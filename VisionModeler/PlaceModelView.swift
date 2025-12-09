@@ -60,6 +60,9 @@ struct PlaceModelView: View {
     
     // Anchor Menu State
     @State private var selectedAnchorPosition: SIMD3<Float>? = nil
+    
+    // Audio State
+    @State private var audioControllers: [String: AudioPlaybackController] = [:]
 
 
 
@@ -415,6 +418,16 @@ struct PlaceModelView: View {
                             Label(isPhysicsDisabled ? "Physics Off" : "Physics On", systemImage: isPhysicsDisabled ? "atom" : "atom")
                                 .labelStyle(.iconOnly)
                                 .foregroundStyle(isPhysicsDisabled ? .secondary : .primary)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        let isPlaying = audioControllers[id] != nil
+                        Button(action: {
+                            toggleSound(for: id)
+                        }) {
+                            Label(isPlaying ? "Stop Sound" : "Play Sound", systemImage: isPlaying ? "speaker.wave.3.fill" : "speaker.slash.fill")
+                                .labelStyle(.iconOnly)
+                                .foregroundStyle(isPlaying ? .blue : .primary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -879,6 +892,34 @@ struct PlaceModelView: View {
             placedEntities[id] = entity
         } catch {
             print("[PlaceModelView] Failed to place menu object \(name): \(error)")
+        }
+    }
+    
+    private func toggleSound(for id: String) {
+        guard let entity = placedEntities[id] else { return }
+
+        if let controller = audioControllers[id] {
+            // Stop
+            controller.stop()
+            audioControllers.removeValue(forKey: id)
+            print("[PlaceModelView] Stopped audio for \(id)")
+        } else {
+            // Play
+            Task {
+                do {
+                    // Try to load a sound file named "example_sound.mp3" from the main bundle.
+                    // Note: You must add a sound file with this name to your Xcode project for this to work.
+                    let resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
+                    
+                    let controller = entity.prepareAudio(resource)
+                    controller.gain = -5.0 // Slightly lower volume
+                    controller.play()
+                    audioControllers[id] = controller
+                    print("[PlaceModelView] Started audio for \(id)")
+                } catch {
+                    print("[PlaceModelView] Failed to load example_sound.mp3: \(error). Please add an audio file with this name to your main application bundle.")
+                }
+            }
         }
     }
 }
