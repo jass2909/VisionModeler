@@ -91,11 +91,88 @@ struct PlaceModelView: View {
     }
 
     var body: some View {
-        RealityView { content in
+        RealityView { content, attachments in
             // Add a persistent world anchor; do not add any default models here.
             content.add(worldAnchor)
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { _ in
                 // Reserved for future hand-tracking driven scaling updates
+            }
+        } update: { content, attachments in
+            // Sync attachments
+            for (id, entity) in placedEntities {
+                // Check if we have an attachment for this entity
+                if let attachmentEntity = attachments.entity(for: id) {
+                    // If the attachment is not yet parented to the entity, add it
+                    if attachmentEntity.parent == nil {
+                        entity.addChild(attachmentEntity)
+                        
+                        // Ensure model has hover effect for gaze feedback
+                        if !entity.components.has(HoverEffectComponent.self) {
+                            entity.components.set(HoverEffectComponent())
+                        }
+                        
+                        // Calculate bounds to position the button above the model
+                        // We use the entity's visual bounds relative to itself to get the unscaled size,
+                        // then we apply logic to handle the parent scale.
+                        // However, simpler is to position relative to local bounds.
+                        let bounds = entity.visualBounds(relativeTo: entity)
+                        let topY = bounds.max.y
+                        
+                        // Local offset: Place it 5cm above the bounding box.
+                        // Since `entity.scale` affects local space, we must check if we need to compensate.
+                        // If we set local position to `topY + 0.05`, and parent scale is `0.01`, 
+                        // the world offset is `(topY + 0.05) * 0.01`. That might be too small if topY is small.
+                        // But `topY` is in local units. If the mesh is 100m tall and scale is 0.01, world is 1m.
+                        // If mesh is 0.2m tall (cube) and scale is 1, world is 0.2m.
+                        
+                        // We want the button to be a fixed world size and fixed world distance above the object.
+                        // 1. Reset attachment scale to world 1.0 (inverse of parent world scale).
+                        let parentWorldScale = entity.scale(relativeTo: nil)
+                        // Avoid division by zero
+                        let invScale = SIMD3<Float>(
+                            1.0 / (parentWorldScale.x > 1e-4 ? parentWorldScale.x : 1.0),
+                            1.0 / (parentWorldScale.y > 1e-4 ? parentWorldScale.y : 1.0),
+                            1.0 / (parentWorldScale.z > 1e-4 ? parentWorldScale.z : 1.0)
+                        )
+                        attachmentEntity.setScale(invScale, relativeTo: entity)
+                        
+                        // 2. Position it.
+                        // We need the world Y of the top of the object.
+                        // World Bounds max Y relative to entity center?
+                        let worldBounds = entity.visualBounds(relativeTo: nil)
+                        let worldTopY = worldBounds.max.y 
+                        let entityWorldPos = entity.position(relativeTo: nil)
+                        
+                        // We want attachment world Y = worldTopY + 0.15 (15cm clearance)
+                        // We can set world position directly.
+                        var targetWorldPos = entityWorldPos
+                        targetWorldPos.y = worldTopY + 0.15
+                        
+                        attachmentEntity.setPosition(targetWorldPos, relativeTo: nil)
+                        
+                        // Billboard so it faces user
+                        attachmentEntity.components.set(BillboardComponent())
+                    }
+                }
+            }
+        } attachments: {
+            ForEach(Array(placedEntities.keys), id: \.self) { id in
+                Attachment(id: id) {
+                    Button(action: {
+                        // Post removal request
+                        NotificationCenter.default.post(
+                            name: Notification.Name("removeObjectRequested"),
+                            object: nil,
+                            userInfo: ["id": id]
+                        )
+                    }) {
+                        Label("Remove", systemImage: "trash")
+                            .labelStyle(.iconOnly)
+                            .padding(12)
+                            .glassBackgroundEffect()
+                    }
+                    // Optional: Make it scale nicely on hover/focus is handled by system with standard controls
+                }
             }
         }
         .gesture(
@@ -191,88 +268,38 @@ struct PlaceModelView: View {
                     rotationBaselineX = nil
                 }
         )
-        .onAppear {
-            // Observe placement requests
-            placeObserver = NotificationCenter.default.addObserver(forName: .placeObjectRequested, object: nil, queue: .main) { note in
-                guard let userInfo = note.userInfo,
-                      let id = userInfo["id"] as? String,
-                      let name = userInfo["name"] as? String else { return }
-                
-                print("[PlaceModelView] placeObjectRequested id=\(id) name=\(name) keys=\(Array(userInfo.keys))")
-                
-                Task {
-                    do {
-                        let entity: Entity
-
-                        if let bookmark = userInfo["bookmark"] as? Data {
-                            var isStale = false
+        .onReceive(NotificationCenter.default.publisher(for: .placeObjectRequested)) { note in
+            guard let userInfo = note.userInfo,
+                  let id = userInfo["id"] as? String,
+                  let name = userInfo["name"] as? String else { return }
+            
+            print("[PlaceModelView] placeObjectRequested id=\(id) name=\(name)")
+            
+            Task {
+                do {
+                    let entity: Entity
+                    
+                    if let bookmark = userInfo["bookmark"] as? Data {
+                        var isStale = false
 #if os(visionOS)
-                            let resolvedURL = try URL(resolvingBookmarkData: bookmark,
-                                                      options: [],
-                                                      relativeTo: nil,
-                                                      bookmarkDataIsStale: &isStale)
-                            let ok = resolvedURL.startAccessingSecurityScopedResource()
+                        let resolvedURL = try URL(resolvingBookmarkData: bookmark,
+                                                  options: [],
+                                                  relativeTo: nil,
+                                                  bookmarkDataIsStale: &isStale)
+                        let ok = resolvedURL.startAccessingSecurityScopedResource()
 #else
-                            let resolvedURL = try URL(resolvingBookmarkData: bookmark,
-                                                      options: [.withSecurityScope],
-                                                      relativeTo: nil,
-                                                      bookmarkDataIsStale: &isStale)
-                            let ok = resolvedURL.startAccessingSecurityScopedResource()
+                        let resolvedURL = try URL(resolvingBookmarkData: bookmark,
+                                                  options: [.withSecurityScope],
+                                                  relativeTo: nil,
+                                                  bookmarkDataIsStale: &isStale)
+                        let ok = resolvedURL.startAccessingSecurityScopedResource()
 #endif
-                            defer { if ok { resolvedURL.stopAccessingSecurityScopedResource() } }
-                            print("[PlaceModelView] Loading via bookmark: stale=\(isStale) url=\(resolvedURL)")
-                            entity = try await Entity.load(contentsOf: resolvedURL)
-                        } else if let urlString = userInfo["url"] as? String, let url = URL(string: urlString) {
-                            // Legacy path: may fail on device due to missing security scope
-                            print("[PlaceModelView] Loading via URL string (no bookmark): \(url)")
-                            entity = try await Entity.load(contentsOf: url)
-                        } else {
-                            print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
-                            entity = try await makeEntity(for: name)
-                        }
-
-                        entity.generateCollisionShapes(recursive: true)
-                        entity.components.set(InputTargetComponent())
-                        entity.position = [0, 0, -1]
-
-                        worldAnchor.addChild(entity)
-                        placedEntities[id] = entity
-                    } catch {
-                        print("Failed to place object (\(name)): \(error)")
-                    }
-                }
-            }
-
-            // Observe removal requests
-            removeObserver = NotificationCenter.default.addObserver(forName: .removeObjectRequested, object: nil, queue: .main) { note in
-                guard let userInfo = note.userInfo,
-                      let id = userInfo["id"] as? String,
-                      let entity = placedEntities[id] else { return }
-
-                // If currently dragging this entity (or a child), cancel the drag first
-                if let grabbed = grabbedEntity, (entity === grabbed || grabbed.isDescendant(of: entity)) {
-                    grabbedEntity = nil
-                    grabbedStartWorldPosition = nil
-                }
-
-                // Optionally remove interactive components before removal
-                entity.components.remove(InputTargetComponent.self)
-
-                // Defer removal to allow hit-test/gesture teardown to complete
-                DispatchQueue.main.async {
-                    entity.removeFromParent()
-                }
-
-                placedEntities.removeValue(forKey: id)
-            }
-        }
-        .onDisappear {
-            if let o = placeObserver { NotificationCenter.default.removeObserver(o) }
-            if let o = removeObserver { NotificationCenter.default.removeObserver(o) }
-            placeObserver = nil
-            removeObserver = nil
-        }
-        .ignoresSafeArea()
-    }
-}
-
+                        defer { if ok { resolvedURL.stopAccessingSecurityScopedResource() } }
+                        print("[PlaceModelView] Loading via bookmark: stale=\(isStale) url=\(resolvedURL)")
+                        entity = try await Entity.load(contentsOf: resolvedURL)
+                    } else if let urlString = userInfo["url"] as? String, let url = URL(string: urlString) {
+                        print("[PlaceModelView] Loading via URL string: \(url)")
+                        entity = try await Entity.load(contentsOf: url)
+                    } else {
+                        print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
+                        entity = try await make

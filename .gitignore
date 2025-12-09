@@ -72,3 +72,4 @@ fastlane/readme.md
 # Environment files
 .env
 .env.*
+VisionModeler.xcodeproj/project.pbxproj
