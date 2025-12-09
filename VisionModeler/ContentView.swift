@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 extension Notification.Name {
     static let placeObjectRequested = Notification.Name("placeObjectRequested")
     static let removeObjectRequested = Notification.Name("removeObjectRequested")
+    static let scanSurfacesToggled = Notification.Name("scanSurfacesToggled")
 }
 
 struct ContentView: View {
@@ -318,7 +319,7 @@ struct ContentView: View {
         }
         do {
             let contents = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-            let supportedExts: Set<String> = ["usdz", "reality"]
+            let supportedExts: Set<String> = ["usdz", "reality", ]
             for url in contents {
                 if supportedExts.contains(url.pathExtension.lowercased()) {
 #if os(visionOS)
