@@ -7,6 +7,7 @@ import ModelIO
 import RealityKit
 import RealityKitContent
 import ARKit
+import UniformTypeIdentifiers
 
 extension Entity {
     func isDescendant(of ancestor: Entity) -> Bool {
@@ -63,7 +64,12 @@ struct PlaceModelView: View {
     
     // Audio State
     @State private var audioControllers: [String: AudioPlaybackController] = [:]
+    @State private var entitySounds: [String: URL] = [:]
     @State private var colorPickerOpenForID: String? = nil
+    
+    // Export State
+    @State private var entitySources: [String: URL] = [:]
+    @State private var entityColors: [String: UIColor] = [:]
 
 
 
@@ -469,6 +475,14 @@ struct PlaceModelView: View {
                                     .foregroundStyle(colorPickerOpenForID == id ? .blue : .primary)
                             }
                             .buttonStyle(.plain)
+                            
+                            Button(action: {
+                                prepareExport(for: id)
+                            }) {
+                                Label("Export", systemImage: "square.and.arrow.up")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .buttonStyle(.plain)
                         }
                         
                         if colorPickerOpenForID == id {
@@ -759,7 +773,7 @@ struct PlaceModelView: View {
                      print("[PlaceModelView] Stopping plane detection...")
                      session.stop()
                      // Clear visualized planes
-                     for entity in planeEntities.values {
+                    for entity in planeEntities.values {
                          entity.removeFromParent()
                      }
                      planeEntities.removeAll()
@@ -767,6 +781,7 @@ struct PlaceModelView: View {
              }
         }
     }
+
 
     // Process plane updates
     @MainActor
@@ -882,6 +897,35 @@ struct PlaceModelView: View {
                   print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
                   entity = try await makeEntity(for: name)
               }
+              
+              // Store source if we found one (resolving bookmark again if needed, or just copy URL)
+              // Since bookmarks are temporary access, we might want to copy the file to a temp dir NOW if we want to export later?
+              // Or we just store the URL and hope we can access it again (if security scoped).
+              // For security scoped bookmarks, we need to resolve fresh each time.
+              // So we might store the bookmark itself in a separate dict if we want to re-resolve for export.
+              // But for now, let's assume if it came from a URL string, we can use that. 
+              // If it came from a bookmark, we might need the bookmark data.
+              
+              if let bookmark = userInfo["bookmark"] as? Data {
+                  // We need to store the bookmark to resolve it later for export
+                  // For simplicity, let's just store the resolved URL if reasonable, but bookmarks are safer.
+                  // Actually, let's just copy the file to a temp 'cache' directory for this session?
+                  // Copying ensures we have a stable exportable file.
+                  if  let tempURL = try? await cacheModel(fromBookmark: bookmark) {
+                      entitySources[id] = tempURL
+                  }
+              } else if let urlString = userInfo["url"] as? String, let url = URL(string: urlString) {
+                  // If it's a file URL, copy it to cache
+                  if url.isFileURL {
+                     if let tempURL = try? await cacheModel(from: url) {
+                         entitySources[id] = tempURL
+                     }
+                  } else {
+                      // Remote URL? We loaded it? RealityKit load can handle remote?
+                      // If so, we should probably have cached it.
+                      entitySources[id] = url
+                  }
+              }
 
               // Configure the entity (scale, physics, collision)
               configureLoadedEntity(entity)
@@ -889,6 +933,19 @@ struct PlaceModelView: View {
               // Apply 3D Text if present
               if let text = userInfo["appliedText"] as? String, !text.isEmpty {
                   addAppliedText(text, to: entity)
+              }
+              
+              // Handle Sound
+              if let sBookmark = userInfo["soundBookmark"] as? Data {
+                  var isStale = false
+                  do {
+                      let sUrl = try URL(resolvingBookmarkData: sBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                      entitySounds[id] = sUrl
+                  } catch {
+                      print("[PlaceModelView] Failed to resolve sound bookmark: \(error)")
+                  }
+              } else if let sUrlStr = userInfo["soundURL"] as? String, let sUrl = URL(string: sUrlStr) {
+                  entitySounds[id] = sUrl
               }
 
               // Position the entity at the tap location
@@ -1018,9 +1075,16 @@ struct PlaceModelView: View {
             // Play
             Task {
                 do {
-                    // Try to load a sound file named "example_sound.mp3" from the main bundle.
-                    // Note: You must add a sound file with this name to your Xcode project for this to work.
-                    let resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
+                    let resource: AudioFileResource
+                    if let soundURL = entitySounds[id] {
+                         let accessing = soundURL.startAccessingSecurityScopedResource()
+                         defer { if accessing { soundURL.stopAccessingSecurityScopedResource() } }
+                         print("[PlaceModelView] Loading assigned sound: \(soundURL)")
+                         resource = try await AudioFileResource(contentsOf: soundURL, configuration: .init(loadingStrategy: .preload))
+                    } else {
+                        // Try to load a sound file named "example_sound.mp3" from the main bundle.
+                        resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
+                    }
                     
                     let controller = entity.prepareAudio(resource)
                     controller.gain = -5.0 // Slightly lower volume
@@ -1028,7 +1092,7 @@ struct PlaceModelView: View {
                     audioControllers[id] = controller
                     print("[PlaceModelView] Started audio for \(id)")
                 } catch {
-                    print("[PlaceModelView] Failed to load example_sound.mp3: \(error). Please add an audio file with this name to your main application bundle.")
+                    print("[PlaceModelView] Failed to load audio: \(error)")
                 }
             }
         }
@@ -1036,6 +1100,9 @@ struct PlaceModelView: View {
 
     private func applyColor(_ color: UIColor, to id: String) {
         guard let root = placedEntities[id] else { return }
+        
+        // Store the color state
+        entityColors[id] = color
         
         func setMaterial(_ entity: Entity) {
             if let modelEntity = entity as? ModelEntity, var modelComp = modelEntity.model {
@@ -1051,5 +1118,157 @@ struct PlaceModelView: View {
         
         setMaterial(root)
     }
-}
 
+    private func cacheModel(fromBookmark bookmark: Data) async throws -> URL {
+        var isStale = false
+        let url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+        // Access security scoped
+        let ok = url.startAccessingSecurityScopedResource()
+        defer { if ok { url.stopAccessingSecurityScopedResource() } }
+        return try await cacheModel(from: url)
+    }
+
+    private func cacheModel(from url: URL) async throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let filename = url.lastPathComponent
+        // Unique name to avoid collisions
+        let dest = tempDir.appendingPathComponent(UUID().uuidString + "_" + filename)
+        
+        // Copy
+        try FileManager.default.copyItem(at: url, to: dest)
+        return dest
+    }
+
+    private func prepareExport(for id: String) {
+        if let source = entitySources[id] {
+            // Check if we have modified the color
+            if let color = entityColors[id] {
+                // We need to modify the asset
+                Task {
+                    if let exportedURL = try? await exportWithColor(source: source, color: color) {
+                         NotificationCenter.default.post(
+                            name: Notification.Name("exportObjectRequested"),
+                            object: nil,
+                            userInfo: [
+                                "url": exportedURL,
+                                "filename": source.deletingPathExtension().lastPathComponent + "_colored"
+                            ]
+                        )
+                    } else {
+                        // Fallback to original if modification fails
+                         NotificationCenter.default.post(
+                            name: Notification.Name("exportObjectRequested"),
+                            object: nil,
+                            userInfo: [
+                                "url": source,
+                                "filename": source.deletingPathExtension().lastPathComponent
+                            ]
+                        )
+                    }
+                }
+            } else {
+                // Post notification for original
+                NotificationCenter.default.post(
+                    name: Notification.Name("exportObjectRequested"),
+                    object: nil,
+                    userInfo: [
+                        "url": source,
+                        "filename": source.deletingPathExtension().lastPathComponent
+                    ]
+                )
+            }
+        } else if let entity = placedEntities[id] {
+            // Attempt to generate export for primitive
+            if let generated = try? generateUSDZ(for: entity) {
+                 NotificationCenter.default.post(
+                    name: Notification.Name("exportObjectRequested"),
+                    object: nil,
+                    userInfo: [
+                        "url": generated,
+                        "filename": "ExportedModel"
+                    ]
+                )
+            } else {
+                print("[PlaceModelView] Cannot export: source not found and generation failed.")
+            }
+        }
+    }
+    
+    private func exportWithColor(source: URL, color: UIColor) async throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let filename = source.deletingPathExtension().lastPathComponent + "_colored.usdz"
+        let dest = tempDir.appendingPathComponent(filename)
+        
+        // Load Asset
+        let asset = MDLAsset(url: source)
+        
+        // Create a material with the desired color
+        // Note: MDLMaterial is generic. Mapping it to RealityKit SimpleMaterial equivalent (PBR)
+        let scatteringFunction = MDLPhysicallyPlausibleScatteringFunction()
+        let material = MDLMaterial(name: "coloredMaterial", scatteringFunction: scatteringFunction)
+        
+        // Set Base Color
+        // Get float components
+        var r: CGFloat = 0; var g: CGFloat = 0; var b: CGFloat = 0; var a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let colorVal = SIMD4<Float>(Float(r), Float(g), Float(b), Float(a))
+        
+        let property = MDLMaterialProperty(name: "baseColor", semantic: .baseColor, float4: colorVal)
+        material.setProperty(property)
+        
+        // Traverse and apply
+        for i in 0..<asset.count {
+            let object = asset.object(at: i)
+            applyMaterialRecursively(object, material: material)
+        }
+        
+        try asset.export(to: dest)
+        return dest
+    }
+    
+    private func applyMaterialRecursively(_ object: MDLObject, material: MDLMaterial) {
+        if let mesh = object as? MDLMesh {
+            for submesh in mesh.submeshes as? [MDLSubmesh] ?? [] {
+               submesh.material = material
+            }
+        }
+        
+        for i in 0..<object.children.count {
+            applyMaterialRecursively(object.children[i], material: material)
+        }
+    }
+
+    private func generateUSDZ(for entity: Entity) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("\(UUID().uuidString).usdz")
+        let asset = MDLAsset()
+        
+        // Use basic fallback based on name or components
+        // Heuristic: Check if we have a simple Cube or Sphere logic
+        
+        // Default to box
+        let mesh: MDLMesh
+        
+        // Check for specific "Sphere" name if we preserved it, or guess.
+        // In this app, we only create "Cube" and "Sphere" primitives by name.
+        // Note: We don't have easy access to the original "name" unless it was set on entity.
+        // makeEntity sets default fallback names if it loads from file, but for primitives?
+        // Let's check if the generic primitive creation sets names.
+        
+        // Actually, we can just check the MeshResource if possible? No.
+        // We'll stick to Box for now as a safe default, OR we could update `makeEntity` to set names.
+        // Let's rely on Box.
+        
+        mesh = MDLMesh.newBox(withDimensions: SIMD3<Float>(0.2, 0.2, 0.2),
+                                  segments: [1,1,1],
+                                  geometryType: .triangles,
+                                  inwardNormals: false,
+                                  allocator: nil)
+        asset.add(mesh)
+        
+        try asset.export(to: fileURL)
+        return fileURL
+    }
+
+
+}

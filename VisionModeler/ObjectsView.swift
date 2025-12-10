@@ -1,6 +1,7 @@
 import SwiftUI
 import RealityKit
 import RealityKitContent
+import UniformTypeIdentifiers
 
 struct ObjectPreviewItem: Identifiable, Codable, Hashable {
     var id: UUID
@@ -20,6 +21,8 @@ struct ObjectsView: View {
     @State private var isScanning: Bool = false
     @State private var showFileImporter: Bool = false
     @State private var showShapePicker: Bool = false
+    @State private var showingSoundImporter = false
+    @State private var objectForSound: UUID? = nil
     
     var body: some View {
         List {
@@ -36,59 +39,88 @@ struct ObjectsView: View {
                                     // Mark as placed and route through immersive open + delayed post
                                     settings.placedIDs.insert(obj.id)
                                     pendingPlacement = obj
-                                    if !showImmersive { showImmersive = true }
-                                    Task {
-                                        await openImmersiveSpace(id: "placeSpace")
-                                        try? await Task.sleep(nanoseconds: 300_000_000)
-                                        print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
-                                        var userInfo: [String: Any] = [
-                                            "id": obj.id.uuidString,
-                                            "name": obj.name,
-                                            "bookmark": obj.bookmark as Any
-                                        ]
-                                        if let url = obj.url {
-                                            userInfo["url"] = url.absoluteString
-                                        } else {
-                                            // Provide a named fallback for bundled placeholders when no URL is available
-                                            switch obj.name {
-                                            case "Cube":
-                                                userInfo["named"] = "CubePlaceholder"
-                                            case "Sphere":
-                                                userInfo["named"] = "SpherePlaceholder"
-                                            case "Cone":
-                                                userInfo["named"] = "Cone"
-                                            case "Cylinder":
-                                                userInfo["named"] = "Cylinder"
-                                            case "Plane":
-                                                userInfo["named"] = "Plane"
-                                            default:
-                                                break
+                                    if !showImmersive {
+                                        // Trigger opening via state change.
+                                        // The actual placement will be handled by ContentView's onChange(of: showImmersive)
+                                        showImmersive = true
+                                    } else {
+                                        // Immersive space already open, post immediately
+                                        Task {
+                                            // Ensure space is active (idempotent)
+                                            await openImmersiveSpace(id: "placeSpace")
+                                            
+                                            print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
+                                            var userInfo: [String: Any] = [
+                                                "id": obj.id.uuidString,
+                                                "name": obj.name,
+                                                "bookmark": obj.bookmark as Any
+                                            ]
+                                            
+                                            if let soundUrl = obj.soundURL {
+                                                userInfo["soundURL"] = soundUrl.absoluteString
                                             }
+                                            if let soundBookmark = obj.soundBookmark {
+                                                userInfo["soundBookmark"] = soundBookmark
+                                            }
+                                            
+                                            if let url = obj.url {
+                                                userInfo["url"] = url.absoluteString
+                                            } else {
+                                                // Provide a named fallback for bundled placeholders when no URL is available
+                                                switch obj.name {
+                                                case "Cube":
+                                                    userInfo["named"] = "CubePlaceholder"
+                                                case "Sphere":
+                                                    userInfo["named"] = "SpherePlaceholder"
+                                                case "Cone":
+                                                    userInfo["named"] = "Cone"
+                                                case "Cylinder":
+                                                    userInfo["named"] = "Cylinder"
+                                                case "Plane":
+                                                    userInfo["named"] = "Plane"
+                                                default:
+                                                    break
+                                                }
+                                            }
+                                            
+                                            NotificationCenter.default.post(
+                                                name: .placeObjectRequested,
+                                                object: nil,
+                                                userInfo: userInfo
+                                            )
+                                            pendingPlacement = nil
                                         }
-                                        NotificationCenter.default.post(
-                                            name: .placeObjectRequested,
-                                            object: nil,
-                                            userInfo: userInfo
-                                        )
                                     }
                                 } label: {
                                     Text("Place")
                                 }
                                 .buttonStyle(.bordered)
-                            } else {
-                                Text("Placed").foregroundStyle(.secondary)
-                            }
-
+                            
                             Button {
-                                openWindow(value: PreviewItem(
-                                    id: obj.id,
-                                    name: obj.name,
-                                    url: obj.url?.absoluteString
-                                ))
+                                objectForSound = obj.id
+                                showingSoundImporter = true
                             } label: {
-                                Text("View")
+                                if obj.soundURL != nil {
+                                    Label("Sound", systemImage: "speaker.wave.2.fill")
+                                } else {
+                                    Text("Sound")
+                                }
                             }
                             .buttonStyle(.bordered)
+                        } else {
+                            Text("Placed").foregroundStyle(.secondary)
+                        }
+
+                        Button {
+                            openWindow(value: PreviewItem(
+                                id: obj.id,
+                                name: obj.name,
+                                url: obj.url?.absoluteString
+                            ))
+                        } label: {
+                            Text("View")
+                        }
+                        .buttonStyle(.bordered)
                         }
                     }
                 }
@@ -342,6 +374,26 @@ struct ObjectsView: View {
                 
             case .failure(let error):
                 print("Import failed: \(error.localizedDescription)")
+            }
+        }
+        .fileImporter(isPresented: $showingSoundImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    guard let objectId = objectForSound else { return }
+                    if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
+                        // Create bookmark
+                        do {
+                            let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                            storedObjects[index].soundURL = url
+                            storedObjects[index].soundBookmark = bookmark
+                        } catch {
+                            print("Error creating bookmark for sound: \(error)")
+                        }
+                    }
+                }
+            case .failure(let error):
+                print("Error picking sound: \(error)")
             }
         }
     }
