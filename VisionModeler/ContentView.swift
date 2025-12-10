@@ -43,6 +43,11 @@ struct ContentView: View {
     @State private var directoryObjects: [StoredObject] = []
     @State private var showingDirectoryImporter: Bool = false
     @State private var placedIDs: Set<UUID> = []
+    
+    // Export State
+    @State private var exportDocument: ExportFileDocument? = nil
+    @State private var isExporting: Bool = false
+    @State private var exportFilename: String = "model"
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -89,26 +94,48 @@ struct ContentView: View {
                         objects: $directoryObjects,
                         pickDirectory: { showingDirectoryImporter = true },
                         place: { obj in
-                            // Always route through immersive open to ensure observers are installed
+                            // Store pending placement
                             pendingPlacement = obj
-                            if !showImmersive { showImmersive = true }
-                            Task {
-                                // Ensure immersive space is open (idempotent)
-                                await openImmersiveSpace(id: "placeSpace")
-                                // Small delay to ensure PlaceModelView observers are installed
-                                try? await Task.sleep(nanoseconds: 300_000_000)
-                                print("[ContentView] Posting placeObjectRequested (Library) for \(obj.name) (\(obj.id))")
-                                NotificationCenter.default.post(
-                                    name: .placeObjectRequested,
-                                    object: nil,
-                                    userInfo: [
+                            
+                            if !showImmersive {
+                                // Trigger opening via state change.
+                                // The actual placement will be handled by the onChange(of: showImmersive) task.
+                                showImmersive = true
+                            } else {
+                                // Immersive space is already open. Post immediately.
+                                Task {
+                                    var userInfo: [String: Any] = [
                                         "id": obj.id.uuidString,
                                         "name": obj.name,
-                                        "url": obj.url?.absoluteString ?? "",
                                         "bookmark": obj.bookmark as Any
                                     ]
-                                )
-                                pendingPlacement = nil
+                                    
+                                    if let soundUrl = obj.soundURL {
+                                        userInfo["soundURL"] = soundUrl.absoluteString
+                                    }
+                                    if let soundBookmark = obj.soundBookmark {
+                                        userInfo["soundBookmark"] = soundBookmark
+                                    }
+                                    
+                                    if let url = obj.url {
+                                        userInfo["url"] = url.absoluteString
+                                    } else {
+                                        // Fallbacks
+                                        switch obj.name {
+                                        case "Cube": userInfo["named"] = "CubePlaceholder"
+                                        case "Sphere": userInfo["named"] = "SpherePlaceholder"
+                                        default: break
+                                        }
+                                    }
+                                    
+                                    print("[ContentView] Posting placeObjectRequested (Library) for \(obj.name) (\(obj.id))")
+                                    NotificationCenter.default.post(
+                                        name: .placeObjectRequested,
+                                        object: nil,
+                                        userInfo: userInfo
+                                    )
+                                    pendingPlacement = nil
+                                }
                             }
                         },
                         addToObjects: { obj in
@@ -177,16 +204,36 @@ struct ContentView: View {
                     if let obj = pendingPlacement {
                         // Small delay to ensure PlaceModelView observers are installed
                         try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+                        
+                        var userInfo: [String: Any] = [
+                            "id": obj.id.uuidString,
+                            "name": obj.name,
+                            "bookmark": obj.bookmark as Any
+                        ]
+                        
+                        if let soundUrl = obj.soundURL {
+                            userInfo["soundURL"] = soundUrl.absoluteString
+                        }
+                        if let soundBookmark = obj.soundBookmark {
+                            userInfo["soundBookmark"] = soundBookmark
+                        }
+                        
+                        if let url = obj.url {
+                            userInfo["url"] = url.absoluteString
+                        } else {
+                            // Fallbacks
+                            switch obj.name {
+                            case "Cube": userInfo["named"] = "CubePlaceholder"
+                            case "Sphere": userInfo["named"] = "SpherePlaceholder"
+                            default: break
+                            }
+                        }
+                        
                         print("[ContentView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
                         NotificationCenter.default.post(
                             name: .placeObjectRequested,
                             object: nil,
-                            userInfo: [
-                                "id": obj.id.uuidString,
-                                "name": obj.name,
-                                "url": obj.url?.absoluteString ?? "",
-                                "bookmark": obj.bookmark as Any
-                            ]
+                            userInfo: userInfo
                         )
                         pendingPlacement = nil
                     } else {
@@ -205,6 +252,29 @@ struct ContentView: View {
         .onChange(of: storedObjects) { _, newValue in
             saveObjects(newValue)
         }
+        .fileExporter(
+             isPresented: $isExporting,
+             document: exportDocument,
+             contentType: .usdz,
+             defaultFilename: exportFilename
+         ) { result in
+             switch result {
+             case .success(let url):
+                 print("[ContentView] Exported to \(url)")
+             case .failure(let error):
+                 print("[ContentView] Export failed: \(error)")
+             }
+         }
+         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("exportObjectRequested"))) { note in
+             if let userInfo = note.userInfo,
+                let url = userInfo["url"] as? URL,
+                let filename = userInfo["filename"] as? String {
+                 print("[ContentView] exportObjectRequested: \(filename)")
+                 exportFilename = filename
+                 exportDocument = ExportFileDocument(fileURL: url)
+                 isExporting = true
+             }
+         }
     }
     
     // MARK: - Persistence

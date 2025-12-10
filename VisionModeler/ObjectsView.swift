@@ -37,40 +37,49 @@ struct ObjectsView: View {
                                     // Mark as placed and route through immersive open + delayed post
                                     placedIDs.insert(obj.id)
                                     pendingPlacement = obj
-                                    if !showImmersive { showImmersive = true }
-                                    Task {
-                                        await openImmersiveSpace(id: "placeSpace")
-                                        try? await Task.sleep(nanoseconds: 300_000_000)
-                                        print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
-                                        var userInfo: [String: Any] = [
-                                            "id": obj.id.uuidString,
-                                            "name": obj.name,
-                                            "bookmark": obj.bookmark as Any
-                                        ]
-                                        if let soundUrl = obj.soundURL {
-                                            userInfo["soundURL"] = soundUrl.absoluteString
-                                        }
-                                        if let soundBookmark = obj.soundBookmark {
-                                            userInfo["soundBookmark"] = soundBookmark
-                                        }
-                                        if let url = obj.url {
-                                            userInfo["url"] = url.absoluteString
-                                        } else {
-                                            // Provide a named fallback for bundled placeholders when no URL is available
-                                            switch obj.name {
-                                            case "Cube":
-                                                userInfo["named"] = "CubePlaceholder"
-                                            case "Sphere":
-                                                userInfo["named"] = "SpherePlaceholder"
-                                            default:
-                                                break
+                                    
+                                    if !showImmersive {
+                                        // Trigger opening via state change.
+                                        // The actual placement will be handled by ContentView's onChange(of: showImmersive)
+                                        showImmersive = true
+                                    } else {
+                                        // Immersive space already open, post immediately
+                                        Task {
+                                            // Ensure space is active (idempotent)
+                                            await openImmersiveSpace(id: "placeSpace")
+                                            
+                                            print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
+                                            var userInfo: [String: Any] = [
+                                                "id": obj.id.uuidString,
+                                                "name": obj.name,
+                                                "bookmark": obj.bookmark as Any
+                                            ]
+                                            if let soundUrl = obj.soundURL {
+                                                userInfo["soundURL"] = soundUrl.absoluteString
                                             }
+                                            if let soundBookmark = obj.soundBookmark {
+                                                userInfo["soundBookmark"] = soundBookmark
+                                            }
+                                            if let url = obj.url {
+                                                userInfo["url"] = url.absoluteString
+                                            } else {
+                                                // Provide a named fallback for bundled placeholders when no URL is available
+                                                switch obj.name {
+                                                case "Cube":
+                                                    userInfo["named"] = "CubePlaceholder"
+                                                case "Sphere":
+                                                    userInfo["named"] = "SpherePlaceholder"
+                                                default:
+                                                    break
+                                                }
+                                            }
+                                            NotificationCenter.default.post(
+                                                name: .placeObjectRequested,
+                                                object: nil,
+                                                userInfo: userInfo
+                                            )
+                                            pendingPlacement = nil
                                         }
-                                        NotificationCenter.default.post(
-                                            name: .placeObjectRequested,
-                                            object: nil,
-                                            userInfo: userInfo
-                                        )
                                     }
                                 } label: {
                                     Text("Place")
