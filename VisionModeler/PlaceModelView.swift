@@ -63,6 +63,7 @@ struct PlaceModelView: View {
     
     // Audio State
     @State private var audioControllers: [String: AudioPlaybackController] = [:]
+    @State private var entitySounds: [String: URL] = [:]
     @State private var colorPickerOpenForID: String? = nil
 
 
@@ -866,6 +867,19 @@ struct PlaceModelView: View {
               if let text = userInfo["appliedText"] as? String, !text.isEmpty {
                   addAppliedText(text, to: entity)
               }
+              
+              // Handle Sound
+              if let sBookmark = userInfo["soundBookmark"] as? Data {
+                  var isStale = false
+                  do {
+                      let sUrl = try URL(resolvingBookmarkData: sBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                      entitySounds[id] = sUrl
+                  } catch {
+                      print("[PlaceModelView] Failed to resolve sound bookmark: \(error)")
+                  }
+              } else if let sUrlStr = userInfo["soundURL"] as? String, let sUrl = URL(string: sUrlStr) {
+                  entitySounds[id] = sUrl
+              }
 
               // Position the entity at the tap location
               // Adjust Y using bounds so it sits ON the point rather than origin intersection
@@ -994,9 +1008,16 @@ struct PlaceModelView: View {
             // Play
             Task {
                 do {
-                    // Try to load a sound file named "example_sound.mp3" from the main bundle.
-                    // Note: You must add a sound file with this name to your Xcode project for this to work.
-                    let resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
+                    let resource: AudioFileResource
+                    if let soundURL = entitySounds[id] {
+                         let accessing = soundURL.startAccessingSecurityScopedResource()
+                         defer { if accessing { soundURL.stopAccessingSecurityScopedResource() } }
+                         print("[PlaceModelView] Loading assigned sound: \(soundURL)")
+                         resource = try await AudioFileResource(contentsOf: soundURL, configuration: .init(loadingStrategy: .preload))
+                    } else {
+                        // Try to load a sound file named "example_sound.mp3" from the main bundle.
+                        resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
+                    }
                     
                     let controller = entity.prepareAudio(resource)
                     controller.gain = -5.0 // Slightly lower volume
@@ -1004,7 +1025,7 @@ struct PlaceModelView: View {
                     audioControllers[id] = controller
                     print("[PlaceModelView] Started audio for \(id)")
                 } catch {
-                    print("[PlaceModelView] Failed to load example_sound.mp3: \(error). Please add an audio file with this name to your main application bundle.")
+                    print("[PlaceModelView] Failed to load audio: \(error)")
                 }
             }
         }

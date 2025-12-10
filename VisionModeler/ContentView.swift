@@ -22,13 +22,17 @@ struct ContentView: View {
         var name: String
         var url: URL?
         var bookmark: Data? = nil
+        var soundURL: URL? = nil
+        var soundBookmark: Data? = nil
         
         // Add explicit init to allow default UUID
-        init(id: UUID = UUID(), name: String, url: URL?, bookmark: Data? = nil) {
+        init(id: UUID = UUID(), name: String, url: URL?, bookmark: Data? = nil, soundURL: URL? = nil, soundBookmark: Data? = nil) {
             self.id = id
             self.name = name
             self.url = url
             self.bookmark = bookmark
+            self.soundURL = soundURL
+            self.soundBookmark = soundBookmark
         }
     }
 
