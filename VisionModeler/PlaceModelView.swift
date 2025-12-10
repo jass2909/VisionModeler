@@ -288,6 +288,30 @@ struct PlaceModelView: View {
             e.components.set(InputTargetComponent())
             return e
 
+        case "Cone":
+            let mesh = MeshResource.generateCone(height: 0.2, radius: 0.1)
+            let mat = SimpleMaterial(color: .green, isMetallic: false)
+            let e = ModelEntity(mesh: mesh, materials: [mat])
+            e.generateCollisionShapes(recursive: true)
+            e.components.set(InputTargetComponent())
+            return e
+
+        case "Cylinder":
+            let mesh = MeshResource.generateCylinder(height: 0.2, radius: 0.1)
+            let mat = SimpleMaterial(color: .yellow, isMetallic: false)
+            let e = ModelEntity(mesh: mesh, materials: [mat])
+            e.generateCollisionShapes(recursive: true)
+            e.components.set(InputTargetComponent())
+            return e
+
+        case "Plane":
+            let mesh = MeshResource.generatePlane(width: 0.3, depth: 0.3)
+            let mat = SimpleMaterial(color: .gray, isMetallic: false)
+            let e = ModelEntity(mesh: mesh, materials: [mat])
+            e.generateCollisionShapes(recursive: true)
+            e.components.set(InputTargetComponent())
+            return e
+
         default:
             // Fallback bottle asset
             if let e = try? await Entity(named: "Small_bottle", in: realityKitContentBundle) {
@@ -381,7 +405,7 @@ struct PlaceModelView: View {
                                 NotificationCenter.default.post(
                                     name: Notification.Name("removeObjectRequested"),
                                     object: nil,
-                                    userInfo: ["id": id]
+                                    userInfo: ["id": id, "deleteFromLibrary": true]
                                 )
                             }) {
                                 Label("Remove", systemImage: "trash")

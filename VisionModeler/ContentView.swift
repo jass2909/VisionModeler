@@ -38,8 +38,6 @@ struct ContentView: View {
     @State private var pickedDirectory: URL? = nil
     @State private var directoryObjects: [StoredObject] = []
     @State private var showingDirectoryImporter: Bool = false
-    @State private var placedIDs: Set<UUID> = []
-
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarMenuView(selected: $selectedMenu)
@@ -121,8 +119,7 @@ struct ContentView: View {
                     ObjectsView(
                         storedObjects: $storedObjects,
                         showImmersive: $showImmersive,
-                        pendingPlacement: $pendingPlacement,
-                        placedIDs: $placedIDs
+                        pendingPlacement: $pendingPlacement
                     )
                 }
             }
@@ -200,6 +197,22 @@ struct ContentView: View {
         }
         .onChange(of: storedObjects) { _, newValue in
             saveObjects(newValue)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .removeObjectRequested)) { note in
+            guard let userInfo = note.userInfo,
+                  let idString = userInfo["id"] as? String,
+                  let id = UUID(uuidString: idString) else { return }
+            
+            // Remove from placedIDs to ensure UI updates
+            settings.placedIDs.remove(id)
+            
+            // Check if we should delete from library (requested by 3D menu)
+            if let delete = userInfo["deleteFromLibrary"] as? Bool, delete {
+                if let index = storedObjects.firstIndex(where: { $0.id == id }) {
+                    print("[ContentView] removeObjectRequested -> Deleting object \(id) from library")
+                    storedObjects.remove(at: index)
+                }
+            }
         }
     }
     

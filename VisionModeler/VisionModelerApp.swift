@@ -58,6 +58,7 @@ struct VisionModelerApp: App {
         WindowGroup(id: "modelPreview", for: PreviewItem.self) { $item in
             if let item = item {
                 let obj = ContentView.StoredObject(
+                    id: item.id,
                     name: item.name,
                     url: item.url.flatMap { URL(string: $0) }
                 )
@@ -73,8 +74,8 @@ struct VisionModelerApp: App {
             }
         }
         .windowStyle(.automatic)
-        .defaultSize(width: 1920, height: 1080)
-        .windowResizability(.contentSize)
+        .defaultSize(width: 900, height: 600)
+        .windowResizability(.automatic)
 
         ImmersiveSpace(id: "placeSpace") {
             PlaceModelView()
