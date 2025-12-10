@@ -199,15 +199,36 @@ struct ObjectsView: View {
 
 struct Model3DView: View {
     let object: ContentView.StoredObject
+    var appliedText: String? = nil
 
     var body: some View {
-        // Note: Avoid `Model3D(model:)` which can lead to generic inference errors; prefer `Model3D(url:)` or `Model3D(named:)`.
         Group {
             if let url = object.url {
-                // Load from a file URL
-                Model3D(url: url)
-                       .frame(width: 350, height: 350)
-                       .scaleEffect(0.3)
+                RealityView { content in
+                    do {
+                        let entity = try await ModelEntity(contentsOf: url)
+                        
+                        let container = Entity()
+                        container.name = "Container"
+                        container.addChild(entity)
+                        
+                        // Center the entity based on its visual bounds
+                        let bounds = entity.visualBounds(relativeTo: nil)
+                        entity.position = -bounds.center
+                        
+                        // Apply a default scale similar to the original .scaleEffect(0.3)
+                        container.scale = SIMD3(repeating: 0.3)
+                        
+                        content.add(container)
+                    } catch {
+                        print("Error loading model: \(error)")
+                    }
+                } update: { content in
+                    if let container = content.entities.first(where: { $0.name == "Container" }) {
+                        updateText(on: container, text: appliedText)
+                    }
+                }
+                .frame(width: 350, height: 350)
             } else {
                 switch object.name {
                 case "Cube":
@@ -215,7 +236,16 @@ struct Model3DView: View {
                         let mesh = MeshResource.generateBox(size: 0.2)
                         let mat = SimpleMaterial(color: .red, isMetallic: false)
                         let e = ModelEntity(mesh: mesh, materials: [mat])
-                        content.add(e)
+                        
+                        let container = Entity()
+                        container.name = "Container"
+                        container.addChild(e)
+                        
+                        content.add(container)
+                    } update: { content in
+                        if let container = content.entities.first(where: { $0.name == "Container" }) {
+                            updateText(on: container, text: appliedText)
+                        }
                     }
                     .frame(width: 350, height: 350)
                     .overlay(alignment: .bottom) {
@@ -229,7 +259,16 @@ struct Model3DView: View {
                         let mesh = MeshResource.generateSphere(radius: 0.12)
                         let mat = SimpleMaterial(color: .blue, isMetallic: false)
                         let e = ModelEntity(mesh: mesh, materials: [mat])
-                        content.add(e)
+                        
+                        let container = Entity()
+                        container.name = "Container"
+                        container.addChild(e)
+                        
+                        content.add(container)
+                    } update: { content in
+                        if let container = content.entities.first(where: { $0.name == "Container" }) {
+                            updateText(on: container, text: appliedText)
+                        }
                     }
                     .frame(width: 350, height: 350)
                     .overlay(alignment: .bottom) {
@@ -246,21 +285,57 @@ struct Model3DView: View {
         }
         .padding()
     }
+
+    private func updateText(on container: Entity, text: String?) {
+        if let existing = container.findEntity(named: "AppliedText") {
+            existing.removeFromParent()
+        }
+
+        guard let text = text, !text.isEmpty else { return }
+
+        // Calculate bounds of existing content (excluding the text we just removed)
+        let modelBounds = container.visualBounds(relativeTo: container)
+
+        let mesh = MeshResource.generateText(
+            text,
+            extrusionDepth: 0.01,
+            font: .systemFont(ofSize: 0.05),
+            containerFrame: .zero,
+            alignment: .center,
+            lineBreakMode: .byWordWrapping
+        )
+        let material = SimpleMaterial(color: .white, isMetallic: false)
+        let textEntity = ModelEntity(mesh: mesh, materials: [material])
+        textEntity.name = "AppliedText"
+
+        let textBounds = textEntity.visualBounds(relativeTo: nil)
+        
+        // Position text centered above the model
+        textEntity.position = SIMD3(
+            -textBounds.extents.x / 2,
+            modelBounds.max.y + 0.05,
+            0
+        )
+
+        container.addChild(textEntity)
+    }
 }
 
 struct ModelPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var settings: SettingsStore
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @State private var previewScale: CGFloat = 1.0
     @State private var yaw: Angle = .degrees(0)
     @State private var pitch: Angle = .degrees(0)
+    @State private var textToApply: String = ""
     let object: ContentView.StoredObject
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                Model3DView(object: object)
+                Model3DView(object: object, appliedText: textToApply)
                     .scaleEffect(previewScale)
                     .rotation3DEffect(pitch, axis: (x: 1, y: 0, z: 0))
                     .rotation3DEffect(yaw, axis: (x: 0, y: 1, z: 0))
@@ -276,6 +351,20 @@ struct ModelPreviewView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
+                         TextField("Apply Text", text: $textToApply)
+                             .textFieldStyle(.roundedBorder)
+                         if !textToApply.isEmpty {
+                             Button {
+                                textToApply = ""
+                             } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                             }
+                         }
+                    }
+                    .padding(.bottom, 8)
+
+                    HStack {
                         Text("Scale")
                         Spacer()
                         Text(String(format: "%.2fx", previewScale))
@@ -288,15 +377,52 @@ struct ModelPreviewView: View {
             }
             .navigationTitle(object.name)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {                    
-                    if settings.useHighContrast {
-                        Button(action: { dismiss() }) {
-                            Text("Done").highContrastTextOutline(true)
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack {
+                        Button("Place") {
+                            Task {
+                                // Ensure the immersive space is open
+                                await openImmersiveSpace(id: "placeSpace")
+                                // Give it a moment to initialize
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                
+                                var userInfo: [String: Any] = [
+                                    "id": object.id.uuidString,
+                                    "name": object.name,
+                                    "bookmark": object.bookmark as Any,
+                                    "appliedText": textToApply
+                                ]
+                                if let url = object.url {
+                                    userInfo["url"] = url.absoluteString
+                                } else {
+                                    // Fallback names for built-ins
+                                    switch object.name {
+                                    case "Cube": userInfo["named"] = "CubePlaceholder"
+                                    case "Sphere": userInfo["named"] = "SpherePlaceholder"
+                                    default: break
+                                    }
+                                }
+                                
+                                NotificationCenter.default.post(
+                                    name: .placeObjectRequested,
+                                    object: nil,
+                                    userInfo: userInfo
+                                )
+                                dismiss()
+                            }
                         }
-                        .buttonStyle(HighContrastButtonStyle(enabled: true))
-                    } else {
-                        Button("Done") { dismiss() }
-                            .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        
+                        if settings.useHighContrast {
+                            Button(action: { dismiss() }) {
+                                Text("Done").highContrastTextOutline(true)
+                            }
+                            .buttonStyle(HighContrastButtonStyle(enabled: true))
+                        } else {
+                            Button("Done") { dismiss() }
+                                .buttonStyle(.bordered)
+                        }
                     }
                 }
             }

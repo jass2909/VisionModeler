@@ -63,6 +63,7 @@ struct PlaceModelView: View {
     
     // Audio State
     @State private var audioControllers: [String: AudioPlaybackController] = [:]
+    @State private var colorPickerOpenForID: String? = nil
 
 
 
@@ -374,62 +375,90 @@ struct PlaceModelView: View {
         } attachments: {
             ForEach(Array(placedEntities.keys), id: \.self) { id in
                 Attachment(id: id) {
-                    HStack(spacing: 8) {
-                        Button(action: {
-                            NotificationCenter.default.post(
-                                name: Notification.Name("removeObjectRequested"),
-                                object: nil,
-                                userInfo: ["id": id]
-                            )
-                        }) {
-                            Label("Remove", systemImage: "trash")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.plain)
-                        
-                        let isLocked = lockedEntityIDs.contains(id)
-                        Button(action: {
-                            if isLocked {
-                                lockedEntityIDs.remove(id)
-                            } else {
-                                lockedEntityIDs.insert(id)
+                    VStack {
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                NotificationCenter.default.post(
+                                    name: Notification.Name("removeObjectRequested"),
+                                    object: nil,
+                                    userInfo: ["id": id]
+                                )
+                            }) {
+                                Label("Remove", systemImage: "trash")
+                                    .labelStyle(.iconOnly)
                             }
-                        }) {
-                            Label(isLocked ? "Unlock" : "Lock", systemImage: isLocked ? "lock.fill" : "lock.open.fill")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.plain)
-                        
-                        let isPhysicsDisabled = physicsDisabledEntityIDs.contains(id)
-                        Button(action: {
-                            if let entity = placedEntities[id], var physics = entity.components[PhysicsBodyComponent.self] {
-                                if isPhysicsDisabled {
-                                    // Enable Physics
-                                    physicsDisabledEntityIDs.remove(id)
-                                    physics.mode = .dynamic
+                            .buttonStyle(.plain)
+                            
+                            let isLocked = lockedEntityIDs.contains(id)
+                            Button(action: {
+                                if isLocked {
+                                    lockedEntityIDs.remove(id)
                                 } else {
-                                    // Disable Physics
-                                    physicsDisabledEntityIDs.insert(id)
-                                    physics.mode = .kinematic
+                                    lockedEntityIDs.insert(id)
                                 }
-                                entity.components.set(physics)
+                            }) {
+                                Label(isLocked ? "Unlock" : "Lock", systemImage: isLocked ? "lock.fill" : "lock.open.fill")
+                                    .labelStyle(.iconOnly)
                             }
-                        }) {
-                            Label(isPhysicsDisabled ? "Physics Off" : "Physics On", systemImage: isPhysicsDisabled ? "atom" : "atom")
-                                .labelStyle(.iconOnly)
-                                .foregroundStyle(isPhysicsDisabled ? .secondary : .primary)
+                            .buttonStyle(.plain)
+                            
+                            let isPhysicsDisabled = physicsDisabledEntityIDs.contains(id)
+                            Button(action: {
+                                if let entity = placedEntities[id], var physics = entity.components[PhysicsBodyComponent.self] {
+                                    if isPhysicsDisabled {
+                                        // Enable Physics
+                                        physicsDisabledEntityIDs.remove(id)
+                                        physics.mode = .dynamic
+                                    } else {
+                                        // Disable Physics
+                                        physicsDisabledEntityIDs.insert(id)
+                                        physics.mode = .kinematic
+                                    }
+                                    entity.components.set(physics)
+                                }
+                            }) {
+                                Label(isPhysicsDisabled ? "Physics Off" : "Physics On", systemImage: isPhysicsDisabled ? "atom" : "atom")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(isPhysicsDisabled ? .secondary : .primary)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            let isPlaying = audioControllers[id] != nil
+                            Button(action: {
+                                toggleSound(for: id)
+                            }) {
+                                Label(isPlaying ? "Stop Sound" : "Play Sound", systemImage: isPlaying ? "speaker.wave.3.fill" : "speaker.slash.fill")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(isPlaying ? .blue : .primary)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(action: {
+                                if colorPickerOpenForID == id {
+                                    colorPickerOpenForID = nil
+                                } else {
+                                    colorPickerOpenForID = id
+                                }
+                            }) {
+                                Label("Colors", systemImage: "paintpalette")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(colorPickerOpenForID == id ? .blue : .primary)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                         
-                        let isPlaying = audioControllers[id] != nil
-                        Button(action: {
-                            toggleSound(for: id)
-                        }) {
-                            Label(isPlaying ? "Stop Sound" : "Play Sound", systemImage: isPlaying ? "speaker.wave.3.fill" : "speaker.slash.fill")
-                                .labelStyle(.iconOnly)
-                                .foregroundStyle(isPlaying ? .blue : .primary)
+                        if colorPickerOpenForID == id {
+                            HStack(spacing: 12) {
+                                Button { applyColor(.red, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.red) }
+                                Button { applyColor(.green, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.green) }
+                                Button { applyColor(.blue, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.blue) }
+                                Button { applyColor(.yellow, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.yellow) }
+                                Button { applyColor(.black, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.black) }
+                                Button { applyColor(.white, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.white) }
+                                Button { applyColor(.gray, to: id) } label: { Image(systemName: "circle.fill").font(.title).foregroundStyle(.gray) }
+                            }
+                            .padding(.top, 8)
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(12)
                     .glassBackgroundEffect()
@@ -796,68 +825,126 @@ struct PlaceModelView: View {
         }
     }
 
-    func placePendingObject(_ pending: (id: String, name: String, source: [AnyHashable: Any]), at worldPosition: SIMD3<Float>) async {
-         let id = pending.id
-         let name = pending.name
-         let userInfo = pending.source
-         
-         do {
-             let entity: Entity
-             
-             if let bookmark = userInfo["bookmark"] as? Data {
-                 var isStale = false
+     func placePendingObject(_ pending: (id: String, name: String, source: [AnyHashable: Any]), at worldPosition: SIMD3<Float>) async {
+          let id = pending.id
+          let name = pending.name
+          let userInfo = pending.source
+          
+          do {
+              let entity: Entity
+              
+              if let bookmark = userInfo["bookmark"] as? Data {
+                  var isStale = false
 #if os(visionOS)
-                 let resolvedURL = try URL(resolvingBookmarkData: bookmark,
-                                           options: [],
-                                           relativeTo: nil,
-                                           bookmarkDataIsStale: &isStale)
-                 let ok = resolvedURL.startAccessingSecurityScopedResource()
+                  let resolvedURL = try URL(resolvingBookmarkData: bookmark,
+                                            options: [],
+                                            relativeTo: nil,
+                                            bookmarkDataIsStale: &isStale)
+                  let ok = resolvedURL.startAccessingSecurityScopedResource()
 #else
-                 let resolvedURL = try URL(resolvingBookmarkData: bookmark,
-                                           options: [.withSecurityScope],
-                                           relativeTo: nil,
-                                           bookmarkDataIsStale: &isStale)
-                 let ok = resolvedURL.startAccessingSecurityScopedResource()
+                  let resolvedURL = try URL(resolvingBookmarkData: bookmark,
+                                            options: [.withSecurityScope],
+                                            relativeTo: nil,
+                                            bookmarkDataIsStale: &isStale)
+                  let ok = resolvedURL.startAccessingSecurityScopedResource()
 #endif
-                 defer { if ok { resolvedURL.stopAccessingSecurityScopedResource() } }
-                 print("[PlaceModelView] Loading via bookmark: stale=\(isStale) url=\(resolvedURL)")
-                 entity = try await loadEntity(from: resolvedURL)
-             } else if let urlString = userInfo["url"] as? String, let url = URL(string: urlString) {
-                 print("[PlaceModelView] Loading via URL string: \(url)")
-                 entity = try await loadEntity(from: url)
-             } else {
-                 print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
-                 entity = try await makeEntity(for: name)
-             }
+                  defer { if ok { resolvedURL.stopAccessingSecurityScopedResource() } }
+                  print("[PlaceModelView] Loading via bookmark: stale=\(isStale) url=\(resolvedURL)")
+                  entity = try await loadEntity(from: resolvedURL)
+              } else if let urlString = userInfo["url"] as? String, let url = URL(string: urlString) {
+                  print("[PlaceModelView] Loading via URL string: \(url)")
+                  entity = try await loadEntity(from: url)
+              } else {
+                  print("[PlaceModelView] Loading via generated/bundled entity for name=\(name)")
+                  entity = try await makeEntity(for: name)
+              }
 
-             // Configure the entity (scale, physics, collision)
-             configureLoadedEntity(entity)
+              // Configure the entity (scale, physics, collision)
+              configureLoadedEntity(entity)
 
-             // Position the entity at the tap location
-             // Adjust Y using bounds so it sits ON the point rather than origin intersection
-             let bounds = entity.visualBounds(relativeTo: entity)
-             
-             // Scale has been applied to 'entity' transform, but 'visualBounds(relativeTo: entity)' return local unscaled bounds?
-             // No, relativeTo: entity ignores the entity's own scale. We need parent-relative bounds to see effect of scale?
-             // Actually, simplest is to use the bounds relative to nil (world) but we haven't added it to world yet.
-             // Or relative to itself, then multiply by scale.
-             let scale = entity.scale(relativeTo: nil).x // uniform
-             let bottomY = bounds.min.y * scale
-             
-             // We want world Y to be worldPosition.y - bottomY (so the bottom sits at worldPosition.y)
-             // offset = -bottomY
-             
-             entity.position = worldPosition + SIMD3<Float>(0, -bottomY + 0.05, 0) // +5cm drop
-             
-             // Add entity under worldAnchor and store by id
+              // Apply 3D Text if present
+              if let text = userInfo["appliedText"] as? String, !text.isEmpty {
+                  addAppliedText(text, to: entity)
+              }
 
-             // Add entity under worldAnchor and store by id
-             worldAnchor.addChild(entity)
-             placedEntities[id] = entity
-             physicsDisabledEntityIDs.insert(id)
-         } catch {
-             print("[PlaceModelView] Failed to place entity for id=\(id) name=\(name): \(error)")
-         }
+              // Position the entity at the tap location
+              // Adjust Y using bounds so it sits ON the point rather than origin intersection
+              let bounds = entity.visualBounds(relativeTo: entity)
+              
+              let scale = entity.scale(relativeTo: nil).x // uniform
+              let bottomY = bounds.min.y * scale
+              
+              entity.position = worldPosition + SIMD3<Float>(0, -bottomY + 0.05, 0) // +5cm drop
+              
+              // Add entity under worldAnchor and store by id
+              worldAnchor.addChild(entity)
+              placedEntities[id] = entity
+              physicsDisabledEntityIDs.insert(id)
+          } catch {
+              print("[PlaceModelView] Failed to place entity for id=\(id) name=\(name): \(error)")
+          }
+     }
+
+    private func addAppliedText(_ text: String, to entity: Entity) {
+        let modelBounds = entity.visualBounds(relativeTo: entity)
+        
+        let mesh = MeshResource.generateText(
+            text,
+            extrusionDepth: 0.01,
+            font: .systemFont(ofSize: 0.05),
+            containerFrame: .zero,
+            alignment: .center,
+            lineBreakMode: .byWordWrapping
+        )
+        let material = SimpleMaterial(color: .white, isMetallic: false)
+        let textEntity = ModelEntity(mesh: mesh, materials: [material])
+        textEntity.name = "AppliedText"
+        
+        // Counteract parent scaling so text size is consistent in world space
+        let parentScale = entity.scale(relativeTo: nil)
+        // Guard against zero scale just in case
+        let safeScaleX = parentScale.x != 0 ? parentScale.x : 1.0
+        let safeScaleY = parentScale.y != 0 ? parentScale.y : 1.0
+        let safeScaleZ = parentScale.z != 0 ? parentScale.z : 1.0
+        
+        textEntity.scale = SIMD3<Float>(1.0 / safeScaleX, 1.0 / safeScaleY, 1.0 / safeScaleZ)
+        
+        // Position centered above the entity
+        // We use the scaled bounds offset logic for height
+        
+        let textBounds = textEntity.visualBounds(relativeTo: nil)
+        // textBounds depends on the scale we just set.
+        // If we set scale to 10, the visual bounds (world) are 10x larger?
+        // Wait, textEntity.visualBounds(relativeTo: nil) will report world bounds.
+        // We want to center it locally.
+        
+        // Local width of text (unscaled mesh size)
+        let meshBounds = textEntity.model?.mesh.bounds.extents ?? .zero
+        
+        // If we want world size to be 0.05, and we scaled it by 1/parentScale,
+        // The local position needs to be calculated carefully.
+        
+        // Let's just place it at the top of the LOCAL bounds of the model.
+        // Since the text is a child, 0,0,0 is the model pivot.
+        
+        let xOffset = -meshBounds.x / 2 // Center text horizontally (mesh origin is bottom-left usually)
+        // Adjust for the inverse scale effect on position if we were untransforming? 
+        // No, local position is just local coordinate.
+        
+        textEntity.position = SIMD3(
+            xOffset * textEntity.scale.x, // We need to offset in local space effectively?
+            // Actually, generateText origin is usually bottom-left. 
+            // Better strategy: Center the text geometry using the bounds center.
+            modelBounds.max.y + (0.05 * textEntity.scale.y), // 5cm gap * inverse scale to equal 5cm world gap
+            0
+        )
+        
+        // Re-centering text geometry is tricky if pivot is corner.
+        // Let's rely on standard centering relative to its own pivot which is usually corner.
+        // We shift it left by half its width.
+        textEntity.position.x = -(meshBounds.x * textEntity.scale.x) / 2
+        
+        entity.addChild(textEntity)
     }
     func placeObject(name: String, at worldPosition: SIMD3<Float>) async {
         let id = UUID().uuidString
@@ -921,6 +1008,24 @@ struct PlaceModelView: View {
                 }
             }
         }
+    }
+
+    private func applyColor(_ color: UIColor, to id: String) {
+        guard let root = placedEntities[id] else { return }
+        
+        func setMaterial(_ entity: Entity) {
+            if let modelEntity = entity as? ModelEntity, var modelComp = modelEntity.model {
+               let material = SimpleMaterial(color: color, isMetallic: false)
+               modelComp.materials = Array(repeating: material, count: modelComp.materials.count)
+               modelEntity.model = modelComp
+            }
+            
+            for child in entity.children {
+                setMaterial(child)
+            }
+        }
+        
+        setMaterial(root)
     }
 }
 
