@@ -818,8 +818,18 @@ struct PlaceModelView: View {
         }
         
         // 2. Physics & Interaction
-        // Important: Recursive generation ensures all child meshes get colliders
-        entity.generateCollisionShapes(recursive: true)
+        // Ensure the root entity has a CollisionComponent so the PhysicsBodyComponent will work.
+        // For primitives (ModelEntity with mesh), we want precise shapes (e.g. Sphere rolls like a sphere).
+        // For complex USDZ imports (often groups), we default to a bounding box so the whole object acts as one body.
+        if entity.components.has(ModelComponent.self) {
+            entity.generateCollisionShapes(recursive: true)
+        } else {
+            // Complex entity or group: generate a bounding box collider
+            let bounds = entity.visualBounds(relativeTo: entity)
+            let shape = ShapeResource.generateBox(size: bounds.extents).offsetBy(translation: bounds.center)
+            entity.components.set(CollisionComponent(shapes: [shape]))
+        }
+        
         entity.components.set(InputTargetComponent())
         
         // 3. Dynamic Physics

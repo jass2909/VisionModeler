@@ -16,7 +16,7 @@ struct ObjectsView: View {
     @Binding var storedObjects: [ContentView.StoredObject]
     @Binding var showImmersive: Bool
     @Binding var pendingPlacement: ContentView.StoredObject?
-
+    
     @State private var previewingObject: ContentView.StoredObject? = nil
     @State private var isScanning: Bool = false
     @State private var showFileImporter: Bool = false
@@ -25,385 +25,386 @@ struct ObjectsView: View {
     @State private var objectForSound: UUID? = nil
     
     var body: some View {
-        List {
-            if storedObjects.isEmpty {
-                Text("No objects yet.").foregroundStyle(.secondary)
-            } else {
-                ForEach(storedObjects) { obj in
-                    HStack {
-                        Text(obj.name)
-                        Spacer()
-                        HStack(spacing: 12) {
-                            if !settings.placedIDs.contains(obj.id) {
-                                Button {
-                                    // Mark as placed and route through immersive open + delayed post
-                                    settings.placedIDs.insert(obj.id)
-                                    pendingPlacement = obj
-                                    if !showImmersive {
-                                        // Trigger opening via state change.
-                                        // The actual placement will be handled by ContentView's onChange(of: showImmersive)
-                                        showImmersive = true
-                                    } else {
-                                        // Immersive space already open, post immediately
-                                        Task {
-                                            // Ensure space is active (idempotent)
-                                            await openImmersiveSpace(id: "placeSpace")
-                                            
-                                            print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
-                                            var userInfo: [String: Any] = [
-                                                "id": obj.id.uuidString,
-                                                "name": obj.name,
-                                                "bookmark": obj.bookmark as Any
-                                            ]
-                                            
-                                            if let soundUrl = obj.soundURL {
-                                                userInfo["soundURL"] = soundUrl.absoluteString
-                                            }
-                                            if let soundBookmark = obj.soundBookmark {
-                                                userInfo["soundBookmark"] = soundBookmark
-                                            }
-                                            
-                                            if let url = obj.url {
-                                                userInfo["url"] = url.absoluteString
-                                            } else {
-                                                // Provide a named fallback for bundled placeholders when no URL is available
-                                                switch obj.name {
-                                                case "Cube":
-                                                    userInfo["named"] = "CubePlaceholder"
-                                                case "Sphere":
-                                                    userInfo["named"] = "SpherePlaceholder"
-                                                case "Cone":
-                                                    userInfo["named"] = "Cone"
-                                                case "Cylinder":
-                                                    userInfo["named"] = "Cylinder"
-                                                case "Plane":
-                                                    userInfo["named"] = "Plane"
-                                                default:
-                                                    break
+        ZStack {
+            List {
+                if storedObjects.isEmpty {
+                    Text("No objects yet.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(storedObjects) { obj in
+                        HStack {
+                            Text(obj.name)
+                            Spacer()
+                            HStack(spacing: 12) {
+                                if !settings.placedIDs.contains(obj.id) {
+                                    Button {
+                                        // Mark as placed and route through immersive open + delayed post
+                                        settings.placedIDs.insert(obj.id)
+                                        pendingPlacement = obj
+                                        if !showImmersive {
+                                            // Trigger opening via state change.
+                                            // The actual placement will be handled by ContentView's onChange(of: showImmersive)
+                                            showImmersive = true
+                                        } else {
+                                            // Immersive space already open, post immediately
+                                            Task {
+                                                // Ensure space is active (idempotent)
+                                                await openImmersiveSpace(id: "placeSpace")
+                                                
+                                                print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
+                                                var userInfo: [String: Any] = [
+                                                    "id": obj.id.uuidString,
+                                                    "name": obj.name,
+                                                    "bookmark": obj.bookmark as Any
+                                                ]
+                                                
+                                                if let soundUrl = obj.soundURL {
+                                                    userInfo["soundURL"] = soundUrl.absoluteString
                                                 }
+                                                if let soundBookmark = obj.soundBookmark {
+                                                    userInfo["soundBookmark"] = soundBookmark
+                                                }
+                                                
+                                                if let url = obj.url {
+                                                    userInfo["url"] = url.absoluteString
+                                                } else {
+                                                    // Provide a named fallback for bundled placeholders when no URL is available
+                                                    switch obj.name {
+                                                    case "Cube":
+                                                        userInfo["named"] = "CubePlaceholder"
+                                                    case "Sphere":
+                                                        userInfo["named"] = "SpherePlaceholder"
+                                                    case "Cone":
+                                                        userInfo["named"] = "Cone"
+                                                    case "Cylinder":
+                                                        userInfo["named"] = "Cylinder"
+                                                    case "Plane":
+                                                        userInfo["named"] = "Plane"
+                                                    default:
+                                                        break
+                                                    }
+                                                }
+                                                
+                                                NotificationCenter.default.post(
+                                                    name: .placeObjectRequested,
+                                                    object: nil,
+                                                    userInfo: userInfo
+                                                )
+                                                pendingPlacement = nil
                                             }
-                                            
-                                            NotificationCenter.default.post(
-                                                name: .placeObjectRequested,
-                                                object: nil,
-                                                userInfo: userInfo
-                                            )
-                                            pendingPlacement = nil
+                                        }
+                                    } label: {
+                                        Text("Place")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    
+                                    Button {
+                                        objectForSound = obj.id
+                                        showingSoundImporter = true
+                                    } label: {
+                                        if obj.soundURL != nil {
+                                            Label("Sound", systemImage: "speaker.wave.2.fill")
+                                        } else {
+                                            Text("Sound")
                                         }
                                     }
+                                    .buttonStyle(.bordered)
+                                } else {
+                                    Text("Placed").foregroundStyle(.secondary)
+                                }
+                                
+                                Button {
+                                    openWindow(value: PreviewItem(
+                                        id: obj.id,
+                                        name: obj.name,
+                                        url: obj.url?.absoluteString
+                                    ))
                                 } label: {
-                                    Text("Place")
+                                    Text("View")
                                 }
                                 .buttonStyle(.bordered)
-                            
-                            Button {
-                                objectForSound = obj.id
-                                showingSoundImporter = true
-                            } label: {
-                                if obj.soundURL != nil {
-                                    Label("Sound", systemImage: "speaker.wave.2.fill")
-                                } else {
-                                    Text("Sound")
-                                }
                             }
-                            .buttonStyle(.bordered)
-                        } else {
-                            Text("Placed").foregroundStyle(.secondary)
-                        }
-
-                        Button {
-                            openWindow(value: PreviewItem(
-                                id: obj.id,
-                                name: obj.name,
-                                url: obj.url?.absoluteString
-                            ))
-                        } label: {
-                            Text("View")
-                        }
-                        .buttonStyle(.bordered)
                         }
                     }
-                }
-                .onDelete { indexSet in
-                    // Send removal requests for any deleted objects so the immersive space can remove them
-                    let idsToRemove = indexSet.map { storedObjects[$0].id }
-                    idsToRemove.forEach { id in
-                        NotificationCenter.default.post(
-                            name: .removeObjectRequested,
-                            object: nil,
-                            userInfo: [
-                                "id": id.uuidString
-                            ]
-                        )
-                    }
-                    storedObjects.remove(atOffsets: indexSet)
-                    settings.placedIDs.subtract(idsToRemove)
-                }
-            }
-        }
-        .navigationTitle("Objects")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                EditButton()
-            }
-            
-            ToolbarItem(placement: .bottomBar) {
-                HStack {
-                    Button(isScanning ? "Stop Scanning" : "Scan Surfaces") {
-                        isScanning.toggle()
-                        let wasClosed = !showImmersive
-                        if isScanning && wasClosed {
-                            showImmersive = true
-                        }
-                        
-                        Task {
-                            if isScanning && wasClosed {
-                                await openImmersiveSpace(id: "placeSpace")
-                                // Give the view a moment to initialize and subscribe
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                            }
-                            
-                            // Notify the immersive view
+                    .onDelete { indexSet in
+                        // Send removal requests for any deleted objects so the immersive space can remove them
+                        let idsToRemove = indexSet.map { storedObjects[$0].id }
+                        idsToRemove.forEach { id in
                             NotificationCenter.default.post(
-                                name: .scanSurfacesToggled,
+                                name: .removeObjectRequested,
                                 object: nil,
-                                userInfo: ["enabled": isScanning]
+                                userInfo: [
+                                    "id": id.uuidString
+                                ]
                             )
                         }
+                        storedObjects.remove(atOffsets: indexSet)
+                        settings.placedIDs.subtract(idsToRemove)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(isScanning ? .red : .blue)
+                }
+            }
+            .navigationTitle("Objects")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
+                }
+                
+                ToolbarItem(placement: .bottomBar) {
+                    HStack {
+                        Button(isScanning ? "Stop Scanning" : "Scan Surfaces") {
+                            isScanning.toggle()
+                            let wasClosed = !showImmersive
+                            if isScanning && wasClosed {
+                                showImmersive = true
+                            }
+                            
+                            Task {
+                                if isScanning && wasClosed {
+                                    await openImmersiveSpace(id: "placeSpace")
+                                    // Give the view a moment to initialize and subscribe
+                                    try? await Task.sleep(nanoseconds: 500_000_000)
+                                }
+                                
+                                // Notify the immersive view
+                                NotificationCenter.default.post(
+                                    name: .scanSurfacesToggled,
+                                    object: nil,
+                                    userInfo: ["enabled": isScanning]
+                                )
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(isScanning ? .red : .blue)
+                        
+                        if settings.useHighContrast {
+                            Button {
+                                showShapePicker = true
+                            } label: {
+                                Text("Add Shape").highContrastTextOutline(true)
+                            }
+                            .buttonStyle(HighContrastButtonStyle(enabled: true))
+                            .popover(isPresented: $showShapePicker) {
+                                VStack(spacing: 12) {
+                                    Button {
+                                        if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
+                                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
+                                        } else {
+                                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                                        }
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cube", systemImage: "cube")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
+                                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
+                                        } else {
+                                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                                        }
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Sphere", systemImage: "circle")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Cone", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cone", systemImage: "cone")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Cylinder", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cylinder", systemImage: "cylinder")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Plane", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Plane", systemImage: "square")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding()
+                                .frame(width: 240)
+                                .presentationCompactAdaptation(.popover)
+                            }
+                            
+                            Button {
+                                showFileImporter = true
+                            } label: {
+                                Text("Import USDZ").highContrastTextOutline(true)
+                            }
+                            .buttonStyle(HighContrastButtonStyle(enabled: true))
+                        } else {
+                            Button("Add Shape") {
+                                showShapePicker = true
+                            }
+                            .buttonStyle(.bordered)
+                            .popover(isPresented: $showShapePicker) {
+                                VStack(spacing: 12) {
+                                    Button {
+                                        if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
+                                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
+                                        } else {
+                                            storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
+                                        }
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cube", systemImage: "cube")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
+                                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
+                                        } else {
+                                            storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
+                                        }
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Sphere", systemImage: "circle")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Cone", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cone", systemImage: "cone")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Cylinder", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Cylinder", systemImage: "cylinder")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        storedObjects.append(ContentView.StoredObject(name: "Plane", url: nil))
+                                        showShapePicker = false
+                                    } label: {
+                                        Label("Plane", systemImage: "square")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding()
+                                .frame(width: 240)
+                                .presentationCompactAdaptation(.popover)
+                            }
+                            
+                            Button("Import USDZ") {
+                                showFileImporter = true
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+            .fileImporter(isPresented: $showingSoundImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first {
+                        guard let objectId = objectForSound else { return }
+                        if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
+                            // Create bookmark
+                            do {
+                                let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                                storedObjects[index].soundURL = url
+                                storedObjects[index].soundBookmark = bookmark
+                            } catch {
+                                print("Error creating bookmark for sound: \(error)")
+                            }
+                        }
+                    }
+                case .failure(let error):
+                    print("Error picking sound: \(error)")
+                }
+            }
+            .fileImporter(
+                isPresented: $showFileImporter,
+                allowedContentTypes: [.usdz, UTType(filenameExtension: "reality", conformingTo: .data) ?? .data],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    guard url.startAccessingSecurityScopedResource() else {
+                        print("Access denied")
+                        return
+                    }
                     
-                    if settings.useHighContrast {
-                        Button {
-                            showShapePicker = true
-                        } label: {
-                            Text("Add Shape").highContrastTextOutline(true)
-                        }
-                        .buttonStyle(HighContrastButtonStyle(enabled: true))
-                        .popover(isPresented: $showShapePicker) {
-                            VStack(spacing: 12) {
-                                Button {
-                                    if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
-                                        storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
-                                    } else {
-                                        storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
-                                    }
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cube", systemImage: "cube")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
-                                        storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
-                                    } else {
-                                        storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
-                                    }
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Sphere", systemImage: "circle")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Cone", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cone", systemImage: "cone")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Cylinder", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cylinder", systemImage: "cylinder")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Plane", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Plane", systemImage: "square")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding()
-                            .frame(width: 240)
-                            .presentationCompactAdaptation(.popover)
-                        }
-                        
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Text("Import USDZ").highContrastTextOutline(true)
-                        }
-                        .buttonStyle(HighContrastButtonStyle(enabled: true))
-                    } else {
-                        Button("Add Shape") {
-                            showShapePicker = true
-                        }
-                        .buttonStyle(.bordered)
-                        .popover(isPresented: $showShapePicker) {
-                            VStack(spacing: 12) {
-                                Button {
-                                    if let url = Bundle.main.url(forResource: "CubePlaceholder", withExtension: "usdz") {
-                                        storedObjects.append(ContentView.StoredObject(name: "Cube", url: url))
-                                    } else {
-                                        storedObjects.append(ContentView.StoredObject(name: "Cube", url: nil))
-                                    }
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cube", systemImage: "cube")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    if let url = Bundle.main.url(forResource: "SpherePlaceholder", withExtension: "usdz") {
-                                        storedObjects.append(ContentView.StoredObject(name: "Sphere", url: url))
-                                    } else {
-                                        storedObjects.append(ContentView.StoredObject(name: "Sphere", url: nil))
-                                    }
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Sphere", systemImage: "circle")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Cone", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cone", systemImage: "cone")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Cylinder", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Cylinder", systemImage: "cylinder")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider()
-                                
-                                Button {
-                                    storedObjects.append(ContentView.StoredObject(name: "Plane", url: nil))
-                                    showShapePicker = false
-                                } label: {
-                                    Label("Plane", systemImage: "square")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding()
-                            .frame(width: 240)
-                            .presentationCompactAdaptation(.popover)
-                        }
-                        
-                        Button("Import USDZ") {
-                            showFileImporter = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
+                    let bookmark = try? url.bookmarkData(
+                        options: .minimalBookmark,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    
+                    let newObject = ContentView.StoredObject(
+                        name: url.deletingPathExtension().lastPathComponent,
+                        url: url,
+                        bookmark: bookmark
+                    )
+                    storedObjects.append(newObject)
+                    
+                case .failure(let error):
+                    print("Import failed: \(error.localizedDescription)")
                 }
-            }
-        }
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.usdz],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                guard url.startAccessingSecurityScopedResource() else {
-                    print("Access denied")
-                    return
-                }
-                
-                let bookmark = try? url.bookmarkData(
-                    options: .minimalBookmark,
-                    includingResourceValuesForKeys: nil,
-                    relativeTo: nil
-                )
-                
-                let newObject = ContentView.StoredObject(
-                    name: url.deletingPathExtension().lastPathComponent,
-                    url: url,
-                    bookmark: bookmark
-                )
-                storedObjects.append(newObject)
-                
-            case .failure(let error):
-                print("Import failed: \(error.localizedDescription)")
-            }
-        }
-        .fileImporter(isPresented: $showingSoundImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    guard let objectId = objectForSound else { return }
-                    if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
-                        // Create bookmark
-                        do {
-                            let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-                            storedObjects[index].soundURL = url
-                            storedObjects[index].soundBookmark = bookmark
-                        } catch {
-                            print("Error creating bookmark for sound: \(error)")
-                        }
-                    }
-                }
-            case .failure(let error):
-                print("Error picking sound: \(error)")
             }
         }
     }
 }
 
-
 struct Model3DView: View {
     let object: ContentView.StoredObject
     var appliedText: String? = nil
-
+    
     var body: some View {
         Group {
             if let url = object.url {
@@ -557,17 +558,17 @@ struct Model3DView: View {
         }
         .padding()
     }
-
+    
     private func updateText(on container: Entity, text: String?) {
         if let existing = container.findEntity(named: "AppliedText") {
             existing.removeFromParent()
         }
-
+        
         guard let text = text, !text.isEmpty else { return }
-
+        
         // Calculate bounds of existing content (excluding the text we just removed)
         let modelBounds = container.visualBounds(relativeTo: container)
-
+        
         let mesh = MeshResource.generateText(
             text,
             extrusionDepth: 0.01,
@@ -579,16 +580,16 @@ struct Model3DView: View {
         let material = SimpleMaterial(color: .white, isMetallic: false)
         let textEntity = ModelEntity(mesh: mesh, materials: [material])
         textEntity.name = "AppliedText"
-
+        
         let textBounds = textEntity.visualBounds(relativeTo: nil)
         
         // Position text centered above the model
         textEntity.position = SIMD3(
             -textBounds.extents.x / 2,
-            modelBounds.max.y + 0.05,
-            0
+             modelBounds.max.y + 0.05,
+             0
         )
-
+        
         container.addChild(textEntity)
     }
 }
@@ -611,7 +612,7 @@ struct ModelPreviewView: View {
     @State private var textToApply: String = ""
     
     let object: ContentView.StoredObject
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -752,3 +753,4 @@ struct ModelPreviewView: View {
     )
     .environmentObject(SettingsStore())
 }
+
