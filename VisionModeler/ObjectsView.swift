@@ -385,6 +385,13 @@ struct ObjectsView: View {
                     case .success(let urls):
                         if let url = urls.first {
                             guard let objectId = objectForSound else { return }
+                            
+                            guard url.startAccessingSecurityScopedResource() else {
+                                print("Access denied for sound file")
+                                return
+                            }
+                            defer { url.stopAccessingSecurityScopedResource() }
+                            
                             if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
                                 // Create bookmark
                                 do {

@@ -116,6 +116,11 @@ enum ModelFactory {
             entity.setScale([scaleStr, scaleStr, scaleStr], relativeTo: nil)
         }
         
+        // Auto-play animations if available
+        if let animation = entity.availableAnimations.first {
+            entity.playAnimation(animation.repeat())
+        }
+        
         if entity.components.has(ModelComponent.self) {
             entity.generateCollisionShapes(recursive: true)
         } else {

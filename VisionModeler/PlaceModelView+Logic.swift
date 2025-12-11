@@ -155,14 +155,36 @@ extension PlaceModelView {
                         resource = try await AudioFileResource(named: "example_sound.mp3", configuration: .init(loadingStrategy: .preload))
                     }
                     
+                    if !entity.components.has(SpatialAudioComponent.self) {
+                        entity.components.set(SpatialAudioComponent(gain: 0))
+                    }
+
                     let controller = entity.prepareAudio(resource)
-                    controller.gain = -5.0
+                    controller.gain = 0.0
                     controller.play()
                     audioControllers[id] = controller
                     print("[PlaceModelView] Started audio for \(id)")
                 } catch {
                     print("[PlaceModelView] Failed to load audio: \(error)")
                 }
+            }
+        }
+    }
+    
+    func toggleAnimation(for id: String) {
+        guard let entity = placedEntities[id] else { return }
+        
+        let isAnimating = entityAnimationStates[id] ?? false
+        
+        if isAnimating {
+            entity.stopAllAnimations()
+            entityAnimationStates[id] = false
+            print("[PlaceModelView] Stopped animation for \(id)")
+        } else {
+            if let animation = entity.availableAnimations.first {
+                entity.playAnimation(animation.repeat())
+                entityAnimationStates[id] = true
+                print("[PlaceModelView] Started animation for \(id)")
             }
         }
     }
@@ -297,6 +319,11 @@ extension PlaceModelView {
              }
              
              ModelFactory.configureLoadedEntity(entity)
+             
+             if !entity.availableAnimations.isEmpty {
+                 print("[PlaceModelView] Entity \(name) has animations. Marking as animating.")
+                 entityAnimationStates[id] = true
+             }
 
              if let text = userInfo["appliedText"] as? String, !text.isEmpty {
                  ModelFactory.addAppliedText(text, to: entity)
@@ -304,8 +331,12 @@ extension PlaceModelView {
              
              if let sBookmark = userInfo["soundBookmark"] as? Data {
                  var isStale = false
-                 if let sUrl = try? URL(resolvingBookmarkData: sBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale) {
-                      entitySounds[id] = sUrl
+                 do {
+                     let sUrl = try URL(resolvingBookmarkData: sBookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                     entitySounds[id] = sUrl
+                     if isStale { print("[PlaceModelView] Sound bookmark is stale for \(name)") }
+                 } catch {
+                     print("[PlaceModelView] Failed to resolve sound bookmark for \(name): \(error)")
                  }
              } else if let sUrlStr = userInfo["soundURL"] as? String, let sUrl = URL(string: sUrlStr) {
                  entitySounds[id] = sUrl

@@ -7,12 +7,14 @@ struct ObjectControlView: View {
     let isLocked: Bool
     let isPhysicsDisabled: Bool
     let isPlaying: Bool
+    let isAnimating: Bool
     let isColorPickerOpen: Bool
     
     var onRemove: () -> Void
     var onToggleLock: () -> Void
     var onTogglePhysics: () -> Void
     var onToggleSound: () -> Void
+    var onToggleAnimation: () -> Void
     var onToggleColorPicker: () -> Void
     var onPrepareExport: () -> Void
     var onColorSelected: (UIColor) -> Void
@@ -43,6 +45,13 @@ struct ObjectControlView: View {
                     Label(isPlaying ? "Stop Sound" : "Play Sound", systemImage: isPlaying ? "speaker.wave.3.fill" : "speaker.slash.fill")
                         .labelStyle(.iconOnly)
                         .foregroundStyle(isPlaying ? .blue : .primary)
+                }
+                .buttonStyle(.plain)
+                
+                Button(action: onToggleAnimation) {
+                    Label(isAnimating ? "Stop Animation" : "Play Animation", systemImage: isAnimating ? "play.circle.fill" : "pause.circle.fill")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(isAnimating ? .blue : .primary)
                 }
                 .buttonStyle(.plain)
                 

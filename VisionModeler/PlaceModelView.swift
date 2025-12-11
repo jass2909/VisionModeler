@@ -45,6 +45,7 @@ struct PlaceModelView: View {
     
     @State var entitySources: [String: URL] = [:]
     @State var entityColors: [String: UIColor] = [:]
+    @State var entityAnimationStates: [String: Bool] = [:]
 
     private let dragSensitivity: Float = 1
     private let dragSmoothing: Float = 0.2
@@ -92,6 +93,7 @@ struct PlaceModelView: View {
                         isLocked: lockedEntityIDs.contains(id),
                         isPhysicsDisabled: physicsDisabledEntityIDs.contains(id),
                         isPlaying: audioControllers[id] != nil,
+                        isAnimating: entityAnimationStates[id] ?? false,
                         isColorPickerOpen: colorPickerOpenForID == id,
                         onRemove: {
                             NotificationCenter.default.post(
@@ -121,6 +123,9 @@ struct PlaceModelView: View {
                         },
                         onToggleSound: {
                             toggleSound(for: id)
+                        },
+                        onToggleAnimation: {
+                            toggleAnimation(for: id)
                         },
                         onToggleColorPicker: {
                             if colorPickerOpenForID == id {
