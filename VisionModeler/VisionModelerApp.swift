@@ -54,6 +54,7 @@ struct VisionModelerApp: App {
         WindowGroup {
             ContentView(showImmersive: $showImmersive)
                 .environmentObject(settings)
+                .tutorialOnFirstLaunch()
         }
         WindowGroup(id: "modelPreview", for: PreviewItem.self) { $item in
             if let item = item {
