@@ -7,7 +7,7 @@ extension PlaceModelView {
     
     func topMovableEntity(from entity: Entity) -> Entity {
         var current: Entity = entity
-        while let parent = current.parent, parent !== worldAnchor {
+        while let parent = current.parent, parent !== worldAnchor, parent !== rootEntity {
             current = parent
         }
         return current
@@ -273,7 +273,7 @@ extension PlaceModelView {
             
             entity.position = worldPosition + SIMD3<Float>(0, offset, 0)
             
-            worldAnchor.addChild(entity)
+            rootEntity.addChild(entity)
             placedEntities[id] = entity
         } catch {
             print("[PlaceModelView] Failed to place menu object \(name): \(error)")
@@ -348,7 +348,7 @@ extension PlaceModelView {
              
              entity.position = worldPosition + SIMD3<Float>(0, -bottomY + 0.05, 0)
              
-             worldAnchor.addChild(entity)
+             rootEntity.addChild(entity)
              placedEntities[id] = entity
              physicsDisabledEntityIDs.insert(id)
          } catch {
@@ -371,4 +371,25 @@ extension PlaceModelView {
             }
         }
     }
+    
+    // MARK: - Navigation
+    func moveRoot(_ delta: SIMD3<Float>) {
+        let currentPos = rootEntity.position
+        rootEntity.position = currentPos + delta
+    }
+    
+    func rotateRoot(_ angle: Float) {
+        let currentRot = rootEntity.orientation
+        let deltaRot = simd_quatf(angle: angle, axis: SIMD3(0, 1, 0))
+        rootEntity.orientation = deltaRot * currentRot
+    }
+    
+    func resetRoot() {
+        rootEntity.position = .zero
+        rootEntity.orientation = simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
+    }
+}
+
+extension Notification.Name {
+    static let placeSceneRequested = Notification.Name("placeSceneRequested")
 }

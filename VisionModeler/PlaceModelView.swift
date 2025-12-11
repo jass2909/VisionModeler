@@ -10,6 +10,7 @@ struct PlaceModelView: View {
     @Environment(\.dismissImmersiveSpace) var dismiss
 
     @State var worldAnchor = AnchorEntity(.world(transform: matrix_identity_float4x4))
+    @State var rootEntity = Entity()
     @State var placedEntities: [String: Entity] = [:]
 
     @State var lockedEntityIDs: Set<String> = []
@@ -46,12 +47,14 @@ struct PlaceModelView: View {
     @State var entitySources: [String: URL] = [:]
     @State var entityColors: [String: UIColor] = [:]
     @State var entityAnimationStates: [String: Bool] = [:]
+    @State private var currentSceneEntity: Entity? = nil
 
     private let dragSensitivity: Float = 1
     private let dragSmoothing: Float = 0.2
 
     var body: some View {
         RealityView { content, attachments in
+            worldAnchor.addChild(rootEntity)
             content.add(worldAnchor)
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { _ in
             }
@@ -83,6 +86,18 @@ struct PlaceModelView: View {
                         attachmentEntity.setPosition(targetWorldPos, relativeTo: nil)
                         attachmentEntity.components.set(BillboardComponent())
                     }
+                }
+            }
+
+            
+            if let navAttachment = attachments.entity(for: "sceneNavigation") {
+                if currentSceneEntity != nil {
+                    if navAttachment.parent == nil {
+                        worldAnchor.addChild(navAttachment)
+                        navAttachment.position = SIMD3(0, 1.0, -0.5)
+                    }
+                } else {
+                    navAttachment.removeFromParent()
                 }
             }
         } attachments: {
@@ -171,6 +186,22 @@ struct PlaceModelView: View {
                     InstructionView(name: name)
                 }
             }
+            
+            Attachment(id: "sceneNavigation") {
+                if currentSceneEntity != nil {
+                    SceneNavigationControl(
+                        onMove: { delta in
+                            moveRoot(delta)
+                        },
+                        onRotate: { angle in
+                            rotateRoot(angle)
+                        },
+                        onReset: {
+                            resetRoot()
+                        }
+                    )
+                }
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -218,7 +249,13 @@ struct PlaceModelView: View {
                     entity.setPosition(smoothedPos, relativeTo: nil)
                 }
                 .onEnded { _ in
-                    if let entity = grabbedEntity,
+                    let entityToRestore = grabbedEntity
+                    grabbedEntity = nil
+                    grabbedStartWorldPosition = nil
+                    
+                    if isScaling || isRotating { return }
+                    
+                    if let entity = entityToRestore,
                        var physics = entity.components[PhysicsBodyComponent.self] {
                         
                         let id = placedEntities.first(where: { $0.value === entity })?.key
@@ -229,28 +266,50 @@ struct PlaceModelView: View {
                         }
                         entity.components.set(physics)
                     }
-                    
-                    grabbedEntity = nil
-                    grabbedStartWorldPosition = nil
                 }
         )
         .simultaneousGesture(
-            MagnificationGesture()
+            MagnifyGesture()
+                .targetedToAnyEntity()
                 .onChanged { value in
-                    guard let entity = grabbedEntity else { return }
+                    let entity = topMovableEntity(from: value.entity)
+                    if isPlaneEntity(entity) { return }
+                    if let id = placedEntities.first(where: { $0.value === entity })?.key,
+                       lockedEntityIDs.contains(id) {
+                        return
+                    }
+
                     if !isScaling {
                         isScaling = true
                         baselineScale = entity.scale(relativeTo: nil)
+                        
+                        if var physics = entity.components[PhysicsBodyComponent.self] {
+                            physics.mode = .kinematic
+                            entity.components.set(physics)
+                        }
                     }
                     guard let base = baselineScale else { return }
-                    let factor = Float(value.magnitude)
+                    let factor = Float(value.magnification)
                     let clamped = max(0.05, min(5.0, factor))
-                    let newScale = SIMD3<Float>(base.x * clamped, base.y * clamped, base.z * clamped)
+                    let newScale = base * clamped
                     entity.setScale(newScale, relativeTo: nil)
                 }
-                .onEnded { _ in
+                .onEnded { value in
                     isScaling = false
                     baselineScale = nil
+                    
+                    if grabbedEntity == nil {
+                        let entity = topMovableEntity(from: value.entity)
+                        if var physics = entity.components[PhysicsBodyComponent.self] {
+                            let id = placedEntities.first(where: { $0.value === entity })?.key
+                            if let id = id, physicsDisabledEntityIDs.contains(id) {
+                                physics.mode = .kinematic
+                            } else {
+                                physics.mode = .dynamic
+                            }
+                            entity.components.set(physics)
+                        }
+                    }
                 }
         )
         .simultaneousGesture(
@@ -329,6 +388,42 @@ struct PlaceModelView: View {
             
             Task {
                 await placePendingObject(pending, at: defaultPos)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .placeSceneRequested)) { note in
+            guard let userInfo = note.userInfo else { return }
+            print("[PlaceModelView] Received placeSceneRequested")
+            
+            Task {
+                // Remove existing scene
+                if let existing = currentSceneEntity {
+                    existing.removeFromParent()
+                    currentSceneEntity = nil
+                }
+                
+                var entity: Entity?
+                if let bookmark = userInfo["bookmark"] as? Data {
+                     var isStale = false
+                     if let url = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale) {
+                         let ok = url.startAccessingSecurityScopedResource()
+                         defer { if ok { url.stopAccessingSecurityScopedResource() } }
+                         entity = try? await ModelFactory.loadEntity(from: url)
+                     }
+                } else if let urlStr = userInfo["url"] as? String, let url = URL(string: urlStr) {
+                    entity = try? await ModelFactory.loadEntity(from: url)
+                }
+                
+                if let scene = entity {
+                    scene.name = "SceneRoot"
+                    scene.position = .zero
+                    // Default orientation etc.
+                    
+                    rootEntity.addChild(scene)
+                    currentSceneEntity = scene
+                    print("[PlaceModelView] Scene placed.")
+                } else {
+                    print("[PlaceModelView] Failed to load scene entity")
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .removeObjectRequested)) { note in

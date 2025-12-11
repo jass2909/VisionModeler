@@ -37,6 +37,7 @@ struct ContentView: View {
     }
 
     @State private var storedObjects: [StoredObject] = []
+    @State private var storedScenes: [StoredObject] = []
     @State private var pendingPlacement: StoredObject? = nil
 
     @State private var pickedDirectory: URL? = nil
@@ -86,6 +87,11 @@ struct ContentView: View {
                     HelpView()
                 case .placement:
                     PlacementSettingsView()
+                case .scenes:
+                    ScenesView(
+                         storedScenes: $storedScenes,
+                         showImmersive: $showImmersive
+                    )
                 case .library:
                     LibraryView(
                         objects: $directoryObjects,
@@ -243,10 +249,14 @@ struct ContentView: View {
             // Load state on startup
             loadLibrary()
             loadPersistedObjects()
+            loadPersistedScenes()
             storedObjects = directoryObjects
         }
         .onChange(of: storedObjects) { _, newValue in
             saveObjects(newValue)
+        }
+        .onChange(of: storedScenes) { _, newValue in
+            saveScenes(newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: .removeObjectRequested)) { note in
             guard let userInfo = note.userInfo,
@@ -490,6 +500,38 @@ struct ContentView: View {
             }
         } catch {
             print("[ContentView] Failed to read picked directory: \(error)")
+        }
+    }
+    
+    private func saveScenes(_ scenes: [StoredObject]) {
+        do {
+            let data = try JSONEncoder().encode(scenes)
+            UserDefaults.standard.set(data, forKey: "persistedStoredScenes")
+        } catch {
+            print("[Persistence] Failed to encode storedScenes: \(error)")
+        }
+    }
+    
+    private func loadPersistedScenes() {
+        guard let data = UserDefaults.standard.data(forKey: "persistedStoredScenes") else { return }
+        do {
+             var loaded = try JSONDecoder().decode([StoredObject].self, from: data)
+             print("[Persistence] Loaded \(loaded.count) scenes.")
+             
+             for i in 0..<loaded.count {
+                 if let bookmark = loaded[i].bookmark {
+                     do {
+                         var isStale = false
+                         let url = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
+                         loaded[i].url = url
+                     } catch {
+                         print("Failed to resolve scene bookmark: \(error)")
+                     }
+                 }
+             }
+             storedScenes = loaded
+        } catch {
+            print("[Persistence] Failed to decode storedScenes: \(error)")
         }
     }
 }
