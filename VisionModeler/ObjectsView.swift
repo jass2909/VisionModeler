@@ -37,17 +37,13 @@ struct ObjectsView: View {
                             HStack(spacing: 12) {
                                 if !settings.placedIDs.contains(obj.id) {
                                     Button {
-                                        // Mark as placed and route through immersive open + delayed post
+
                                         settings.placedIDs.insert(obj.id)
                                         pendingPlacement = obj
                                         if !showImmersive {
-                                            // Trigger opening via state change.
-                                            // The actual placement will be handled by ContentView's onChange(of: showImmersive)
                                             showImmersive = true
                                         } else {
-                                            // Immersive space already open, post immediately
                                             Task {
-                                                // Ensure space is active (idempotent)
                                                 await openImmersiveSpace(id: "placeSpace")
                                                 
                                                 print("[ObjectsView] Posting placeObjectRequested for \(obj.name) (\(obj.id))")
@@ -67,7 +63,7 @@ struct ObjectsView: View {
                                                 if let url = obj.url {
                                                     userInfo["url"] = url.absoluteString
                                                 } else {
-                                                    // Provide a named fallback for bundled placeholders when no URL is available
+
                                                     switch obj.name {
                                                     case "Cube":
                                                         userInfo["named"] = "CubePlaceholder"
@@ -126,7 +122,7 @@ struct ObjectsView: View {
                         }
                     }
                     .onDelete { indexSet in
-                        // Send removal requests for any deleted objects so the immersive space can remove them
+
                         let idsToRemove = indexSet.map { storedObjects[$0].id }
                         idsToRemove.forEach { id in
                             NotificationCenter.default.post(
@@ -160,11 +156,11 @@ struct ObjectsView: View {
                             Task {
                                 if isScanning && wasClosed {
                                     await openImmersiveSpace(id: "placeSpace")
-                                    // Give the view a moment to initialize and subscribe
+
                                     try? await Task.sleep(nanoseconds: 500_000_000)
                                 }
                                 
-                                // Notify the immersive view
+
                                 NotificationCenter.default.post(
                                     name: .scanSurfacesToggled,
                                     object: nil,
@@ -426,11 +422,11 @@ struct Model3DView: View {
                         container.name = "Container"
                         container.addChild(entity)
                         
-                        // Center the entity based on its visual bounds
+
                         let bounds = entity.visualBounds(relativeTo: nil)
                         entity.position = -bounds.center
                         
-                        // Apply a default scale similar to the original .scaleEffect(0.3)
+
                         container.scale = SIMD3(repeating: 0.3)
                         
                         content.add(container)
@@ -576,7 +572,7 @@ struct Model3DView: View {
         
         guard let text = text, !text.isEmpty else { return }
         
-        // Calculate bounds of existing content (excluding the text we just removed)
+
         let modelBounds = container.visualBounds(relativeTo: container)
         
         let mesh = MeshResource.generateText(
@@ -593,7 +589,7 @@ struct Model3DView: View {
         
         let textBounds = textEntity.visualBounds(relativeTo: nil)
         
-        // Position text centered above the model
+
         textEntity.position = SIMD3(
             -textBounds.extents.x / 2,
              modelBounds.max.y + 0.05,
@@ -626,7 +622,7 @@ struct ModelPreviewView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background Gradient for Premium feel (subtle)
+
                 RadialGradient(
                     gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.clear]),
                     center: .center,

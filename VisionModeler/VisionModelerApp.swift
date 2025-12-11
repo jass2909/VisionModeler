@@ -10,7 +10,6 @@ import SwiftUI
 struct PreviewItem: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var name: String
-    // Store URL as string to match existing `.flatMap { URL(string: $0) }` usage
     var url: String?
 }
 

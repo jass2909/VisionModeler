@@ -289,12 +289,7 @@ extension PlaceModelView {
              var entity: Entity
              
              if let bookmark = userInfo["bookmark"] as? Data {
-                 entity = try await ModelFactory.makeEntity(for: name) // Fallback logic? No, load via bookmark.
-                 // Actually ModelFactory doesn't do bookmark logic directly, we need to resolve it.
-                 // Wait, I should have put the bookmark resolution in ModelFactory or here.
-                 // I'll put it in ModelFactory.loadEntity but it takes URL.
-                 // Let's resolve here then call loadEntity.
-                 
+                 entity = try await ModelFactory.makeEntity(for: name)
                  var isStale = false
                  let resolvedURL = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
                  let ok = resolvedURL.startAccessingSecurityScopedResource()

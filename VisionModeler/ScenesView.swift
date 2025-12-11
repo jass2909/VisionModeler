@@ -78,7 +78,6 @@ struct ScenesView: View {
             }
              await openImmersiveSpace(id: "placeSpace")
              
-             // Wait briefly to ensure space is ready
              try? await Task.sleep(nanoseconds: 500_000_000)
 
              var userInfo: [String: Any] = [

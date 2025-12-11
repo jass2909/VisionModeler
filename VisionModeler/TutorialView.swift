@@ -1,19 +1,4 @@
 import SwiftUI
-
-// MARK: - Tutorial Presentation
-// Attach `.tutorialOnFirstLaunch()` to your app's root view to automatically
-// present the tutorial on first launch. Example:
-//
-// struct RootView: View {
-//     var body: some View {
-//         ContentView()
-//             .tutorialOnFirstLaunch()
-//     }
-// }
-//
-// The tutorial will be shown once. After the user taps "Got it", it will not
-// appear again across app launches (persisted via @AppStorage).
-
 private let hasSeenTutorialKey = "hasSeenTutorial"
 
 struct TutorialOnFirstLaunch: ViewModifier {
@@ -34,7 +19,6 @@ extension View {
     }
 }
 
-// MARK: - Tutorial View
 struct TutorialView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(hasSeenTutorialKey) private var hasSeenTutorial: Bool = false
@@ -141,7 +125,6 @@ struct TutorialView: View {
             HStack {
                 Spacer()
                 Button(role: .cancel) {
-                    // Allow skipping once; still mark as seen to avoid re-showing on next launch.
                     completeTutorial()
                 } label: {
                     Label("Got it", systemImage: "checkmark.circle.fill")
@@ -157,7 +140,6 @@ struct TutorialView: View {
     }
 }
 
-// MARK: - Reusable Card
 private struct TutorialCard: View {
     let icon: String
     let title: String
@@ -188,7 +170,6 @@ private struct TutorialCard: View {
     }
 }
 
-// MARK: - Preview
 #Preview {
     ZStack {
         Color(.systemBackground)

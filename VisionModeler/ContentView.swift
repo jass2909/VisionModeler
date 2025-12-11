@@ -16,7 +16,7 @@ struct ContentView: View {
     @State private var selectedMenu: MenuTopic? = nil
     @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
 
-    // Simple in-memory store of objects for now
+
     struct StoredObject: Identifiable, Hashable, Codable {
         let id: UUID
         var name: String
@@ -25,7 +25,7 @@ struct ContentView: View {
         var soundURL: URL? = nil
         var soundBookmark: Data? = nil
         
-        // Add explicit init to allow default UUID
+
         init(id: UUID = UUID(), name: String, url: URL?, bookmark: Data? = nil, soundURL: URL? = nil, soundBookmark: Data? = nil) {
             self.id = id
             self.name = name
@@ -97,15 +97,13 @@ struct ContentView: View {
                         objects: $directoryObjects,
                         pickDirectory: { showingDirectoryImporter = true },
                         place: { obj in
-                            // Store pending placement
+
                             pendingPlacement = obj
                             
                             if !showImmersive {
-                                // Trigger opening via state change.
-                                // The actual placement will be handled by the onChange(of: showImmersive) task.
                                 showImmersive = true
                             } else {
-                                // Immersive space is already open. Post immediately.
+
                                 Task {
                                     var userInfo: [String: Any] = [
                                         "id": obj.id.uuidString,
@@ -123,7 +121,7 @@ struct ContentView: View {
                                     if let url = obj.url {
                                         userInfo["url"] = url.absoluteString
                                     } else {
-                                        // Fallbacks
+
                                         switch obj.name {
                                         case "Cube": userInfo["named"] = "CubePlaceholder"
                                         case "Sphere": userInfo["named"] = "SpherePlaceholder"
@@ -197,14 +195,14 @@ struct ContentView: View {
             }
         }
         .controlSize(settings.useHighContrast ? .large : .regular)
-        //.buttonStyle(HighContrastButtonStyle(enabled: settings.useHighContrast))  // Removed as per instructions
+
         .onChange(of: showImmersive) { _, newValue in
             if newValue {
                 Task {
                     await openImmersiveSpace(id: "placeSpace")
-                    // After the immersive space is opened, send the placement request if any
+
                     if let obj = pendingPlacement {
-                        // Small delay to ensure PlaceModelView observers are installed
+
                         try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
                         
                         var userInfo: [String: Any] = [
@@ -223,7 +221,7 @@ struct ContentView: View {
                         if let url = obj.url {
                             userInfo["url"] = url.absoluteString
                         } else {
-                            // Fallbacks
+
                             switch obj.name {
                             case "Cube": userInfo["named"] = "CubePlaceholder"
                             case "Sphere": userInfo["named"] = "SpherePlaceholder"
@@ -246,7 +244,7 @@ struct ContentView: View {
         }
         .task {
             storedObjects = []
-            // Load state on startup
+
             loadLibrary()
             loadPersistedObjects()
             loadPersistedScenes()
@@ -263,10 +261,10 @@ struct ContentView: View {
                   let idString = userInfo["id"] as? String,
                   let id = UUID(uuidString: idString) else { return }
             
-            // Remove from placedIDs to ensure UI updates
+
             settings.placedIDs.remove(id)
             
-            // Check if we should delete from library (requested by 3D menu)
+
             if let delete = userInfo["deleteFromLibrary"] as? Bool, delete {
                 if let index = storedObjects.firstIndex(where: { $0.id == id }) {
                     print("[ContentView] removeObjectRequested -> Deleting object \(id) from library")
@@ -308,7 +306,7 @@ struct ContentView: View {
     }
     
     private func saveLibrary(_ url: URL) {
-        // Create a security-scoped bookmark
+
         do {
             #if os(visionOS)
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
@@ -334,7 +332,6 @@ struct ContentView: View {
             
             if isStale {
                 print("[Persistence] Library bookmark is stale.")
-                // If it's stale, we might need to ask user to pick again, but we can try to use it.
             }
             
             let ok = url.startAccessingSecurityScopedResource()
@@ -342,12 +339,9 @@ struct ContentView: View {
                 print("[Persistence] Loaded persisted library: \(url)")
                 pickedDirectory = url
                 // Note: We don't stop accessing immediately if we want to read it, but importDirectory does its own access management.
-                // However, we should keep the variable accessed if we intend to hold it?
-                // Actually `importDirectory` calls startAccessing internally too, which is fine (nested calls work with reference counting).
-                // We'll release here and let importDirectory handle it.
                 url.stopAccessingSecurityScopedResource()
                 
-                // Re-import (list files)
+
                 importDirectory(url)
                 self.storedObjects = self.directoryObjects
             } else {
@@ -373,7 +367,7 @@ struct ContentView: View {
             var loaded = try JSONDecoder().decode([StoredObject].self, from: data)
             print("[Persistence] Loaded \(loaded.count) objects from persistence.")
             
-            // Re-inflate tokens
+
             for i in 0..<loaded.count {
                 if let bookmark = loaded[i].bookmark {
                     do {
@@ -385,9 +379,6 @@ struct ContentView: View {
                         #endif
                         
                         // We must start accessing if we want to use it later
-                        // But managing the lifecycle of these access tokens is tricky.
-                        // Usually, you start accessing right before using, and stop after.
-                        // For now, we just resolve the URL. The view or placement logic will call startAccessing again when needed (via the bookmark in userInfo).
                         loaded[i].url = url
                     } catch {
                         print("[Persistence] Failed to resolve object bookmark for \(loaded[i].name): \(error)")
@@ -471,19 +462,7 @@ struct ContentView: View {
                     do {
                         try fm.copyItem(at: url, to: dst)
                         
-                        // Create bookmark for the local file if needed, or better, for the original if we want to persist source ref.
-                        // But actually `importDirectory` implies copying to app documents?
-                        // If we copy to app documents, we don't need security scope for the destination.
-                        // But wait, the previous code copied it.
-                        // The user said "persist selected library".
-                        // If "Library" view just shows external files, we need bookmarks.
-                        // If "Objects" list contains copied files, we don't need bookmarks for them (they are in app container).
-                        // Let's create a bookmark for the *source* just in case or just rely on the copied path.
-                        // StoredObject(name: url.lastPathComponent, url: dst) is safe for app restart if dst is in Documents.
-                        
                         var obj = StoredObject(name: url.lastPathComponent, url: dst)
-                        // If we want to persist the SOURCE bookmark to re-copy later? No need.
-                        
                         directoryObjects.append(obj)
                     } catch {
                         print("[ContentView] Failed copying \(url.lastPathComponent): \(error)")

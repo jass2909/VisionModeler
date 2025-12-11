@@ -49,8 +49,7 @@ enum ModelFactory {
             let mesh = MeshResource.generateCone(height: height, radius: radius)
             let mat = SimpleMaterial(color: .green, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            // Cone approximation with generic convex or box if exact primitive unavailable in older SDK, 
-            // but for safety/perf, simple box bounding
+
             let shape = ShapeResource.generateBox(width: radius*2, height: height, depth: radius*2)
             e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
@@ -61,7 +60,7 @@ enum ModelFactory {
             let mesh = MeshResource.generateCylinder(height: height, radius: radius)
             let mat = SimpleMaterial(color: .yellow, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            // Standard capsule or box approximation
+
             let shape = ShapeResource.generateCapsule(height: height, radius: radius)
             e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
@@ -73,7 +72,6 @@ enum ModelFactory {
             let mat = SimpleMaterial(color: .gray, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
             
-            // Manual collision shape for plane (flat meshes cause crash with generateCollisionShapes)
             let shape = ShapeResource.generateBox(width: width, height: 0.01, depth: depth)
             e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
@@ -81,7 +79,6 @@ enum ModelFactory {
         default:
             if let e = try? await Entity(named: "Small_bottle", in: realityKitContentBundle) {
                 e.setScale([0.01, 0.01, 0.01], relativeTo: nil)
-                // Use configureLoadedEntity or similar logic instead of direct recursion
                 if !e.components.has(CollisionComponent.self) {
                     e.generateCollisionShapes(recursive: true)
                 }
@@ -107,11 +104,7 @@ enum ModelFactory {
         if ["usdz", "reality", "usd", "usda", "usdc", "rcproject"].contains(ext) {
             return try await Entity.load(contentsOf: url)
         } else {
-            // Since we are now on MainActor, we can call this directly or wrapping in Task checks.
-            // But ModelEntity.loadModel is synchronous or async? It's synchronous usually for ModelIO bridging but let's check.
-            // The previous code coerced it via Task { @MainActor ... }. 
-            // Since this function is now @MainActor, we can just do the work.
-            
+
              do {
                 return try ModelEntity.loadModel(contentsOf: url)
             } catch {
@@ -145,7 +138,7 @@ enum ModelFactory {
             entity.setScale([scaleStr, scaleStr, scaleStr], relativeTo: nil)
         }
         
-        // Auto-play animations if available
+
         if let animation = entity.availableAnimations.first {
             entity.playAnimation(animation.repeat())
         }
