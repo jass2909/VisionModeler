@@ -347,56 +347,59 @@ struct ObjectsView: View {
                     }
                 }
             }
-            .fileImporter(isPresented: $showingSoundImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first {
-                        guard let objectId = objectForSound else { return }
-                        if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
-                            // Create bookmark
-                            do {
-                                let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-                                storedObjects[index].soundURL = url
-                                storedObjects[index].soundBookmark = bookmark
-                            } catch {
-                                print("Error creating bookmark for sound: \(error)")
+        }
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [.usdz, UTType(filenameExtension: "reality", conformingTo: .data) ?? .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                guard url.startAccessingSecurityScopedResource() else {
+                    print("Access denied")
+                    return
+                }
+                
+                let bookmark = try? url.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+                
+                let newObject = ContentView.StoredObject(
+                    name: url.deletingPathExtension().lastPathComponent,
+                    url: url,
+                    bookmark: bookmark
+                )
+                storedObjects.append(newObject)
+                
+            case .failure(let error):
+                print("Import failed: \(error.localizedDescription)")
+            }
+        }
+        .background {
+            Color.clear
+                .fileImporter(isPresented: $showingSoundImporter, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+                    switch result {
+                    case .success(let urls):
+                        if let url = urls.first {
+                            guard let objectId = objectForSound else { return }
+                            if let index = storedObjects.firstIndex(where: { $0.id == objectId }) {
+                                // Create bookmark
+                                do {
+                                    let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+                                    storedObjects[index].soundURL = url
+                                    storedObjects[index].soundBookmark = bookmark
+                                } catch {
+                                    print("Error creating bookmark for sound: \(error)")
+                                }
                             }
                         }
+                    case .failure(let error):
+                        print("Error picking sound: \(error)")
                     }
-                case .failure(let error):
-                    print("Error picking sound: \(error)")
                 }
-            }
-            .fileImporter(
-                isPresented: $showFileImporter,
-                allowedContentTypes: [.usdz, UTType(filenameExtension: "reality", conformingTo: .data) ?? .data],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    guard url.startAccessingSecurityScopedResource() else {
-                        print("Access denied")
-                        return
-                    }
-                    
-                    let bookmark = try? url.bookmarkData(
-                        options: .minimalBookmark,
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    )
-                    
-                    let newObject = ContentView.StoredObject(
-                        name: url.deletingPathExtension().lastPathComponent,
-                        url: url,
-                        bookmark: bookmark
-                    )
-                    storedObjects.append(newObject)
-                    
-                case .failure(let error):
-                    print("Import failed: \(error.localizedDescription)")
-                }
-            }
         }
     }
 }
