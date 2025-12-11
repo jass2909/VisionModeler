@@ -4,6 +4,7 @@ import RealityKitContent
 import ModelIO
 
 enum ModelFactory {
+    @MainActor
     static func makeEntity(for name: String) async throws -> Entity {
         let lower = name.lowercased()
         let url = URL(fileURLWithPath: lower)
@@ -25,86 +26,114 @@ enum ModelFactory {
         
         switch name {
         case "Cube":
-            let mesh = MeshResource.generateBox(size: 0.2)
+            let size: Float = 0.2
+            let mesh = MeshResource.generateBox(size: size)
             let mat = SimpleMaterial(color: .red, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            e.generateCollisionShapes(recursive: true)
+            let shape = ShapeResource.generateBox(size: [size, size, size])
+            e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
             return e
         case "Sphere":
-            let mesh = MeshResource.generateSphere(radius: 0.12)
+            let radius: Float = 0.12
+            let mesh = MeshResource.generateSphere(radius: radius)
             let mat = SimpleMaterial(color: .blue, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            e.generateCollisionShapes(recursive: true)
+            let shape = ShapeResource.generateSphere(radius: radius)
+            e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
             return e
         case "Cone":
-            let mesh = MeshResource.generateCone(height: 0.2, radius: 0.1)
+            let height: Float = 0.2
+            let radius: Float = 0.1
+            let mesh = MeshResource.generateCone(height: height, radius: radius)
             let mat = SimpleMaterial(color: .green, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            e.generateCollisionShapes(recursive: true)
+            // Cone approximation with generic convex or box if exact primitive unavailable in older SDK, 
+            // but for safety/perf, simple box bounding
+            let shape = ShapeResource.generateBox(width: radius*2, height: height, depth: radius*2)
+            e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
             return e
         case "Cylinder":
-            let mesh = MeshResource.generateCylinder(height: 0.2, radius: 0.1)
+            let height: Float = 0.2
+            let radius: Float = 0.1
+            let mesh = MeshResource.generateCylinder(height: height, radius: radius)
             let mat = SimpleMaterial(color: .yellow, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            e.generateCollisionShapes(recursive: true)
+            // Standard capsule or box approximation
+            let shape = ShapeResource.generateCapsule(height: height, radius: radius)
+            e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
             return e
         case "Plane":
-            let mesh = MeshResource.generatePlane(width: 0.3, depth: 0.3)
+            let width: Float = 0.3
+            let depth: Float = 0.3
+            let mesh = MeshResource.generatePlane(width: width, depth: depth)
             let mat = SimpleMaterial(color: .gray, isMetallic: false)
             let e = ModelEntity(mesh: mesh, materials: [mat])
-            e.generateCollisionShapes(recursive: true)
+            
+            // Manual collision shape for plane (flat meshes cause crash with generateCollisionShapes)
+            let shape = ShapeResource.generateBox(width: width, height: 0.01, depth: depth)
+            e.components.set(CollisionComponent(shapes: [shape]))
             e.components.set(InputTargetComponent())
             return e
         default:
             if let e = try? await Entity(named: "Small_bottle", in: realityKitContentBundle) {
                 e.setScale([0.01, 0.01, 0.01], relativeTo: nil)
-                e.generateCollisionShapes(recursive: true)
+                // Use configureLoadedEntity or similar logic instead of direct recursion
+                if !e.components.has(CollisionComponent.self) {
+                    e.generateCollisionShapes(recursive: true)
+                }
                 e.components.set(InputTargetComponent())
                 return e
             } else {
                 print("[ModelFactory] Bundled asset missing; using fallback.")
-                let mesh = MeshResource.generateBox(size: 0.15)
+                let size: Float = 0.15
+                let mesh = MeshResource.generateBox(size: size)
                 let mat = SimpleMaterial(color: .gray, isMetallic: false)
                 let e = ModelEntity(mesh: mesh, materials: [mat])
-                e.generateCollisionShapes(recursive: true)
+                let shape = ShapeResource.generateBox(size: [size, size, size])
+                e.components.set(CollisionComponent(shapes: [shape]))
                 e.components.set(InputTargetComponent())
                 return e
             }
         }
     }
     
+    @MainActor
     static func loadEntity(from url: URL) async throws -> Entity {
         let ext = url.pathExtension.lowercased()
         if ["usdz", "reality", "usd", "usda", "usdc", "rcproject"].contains(ext) {
             return try await Entity.load(contentsOf: url)
         } else {
-            return try await Task { @MainActor in
-                do {
-                    return try ModelEntity.loadModel(contentsOf: url)
-                } catch {
-                    print("[ModelFactory] ModelEntity.loadModel failed: \(error). Attempting fallback.")
-                    let asset = MDLAsset(url: url)
-                    if asset.count == 0 {
-                        throw error
-                    }
-                    var objects: [MDLObject] = []
-                    for i in 0..<asset.count {
-                        objects.append(asset.object(at: i))
-                    }
-                    let mesh = try MeshResource.generate(from: objects as! [MeshDescriptor])
-                    let material = SimpleMaterial(color: .gray, isMetallic: false)
-                    let entity = ModelEntity(mesh: mesh, materials: [material])
-                    entity.name = url.lastPathComponent
-                    return entity
+            // Since we are now on MainActor, we can call this directly or wrapping in Task checks.
+            // But ModelEntity.loadModel is synchronous or async? It's synchronous usually for ModelIO bridging but let's check.
+            // The previous code coerced it via Task { @MainActor ... }. 
+            // Since this function is now @MainActor, we can just do the work.
+            
+             do {
+                return try ModelEntity.loadModel(contentsOf: url)
+            } catch {
+                print("[ModelFactory] ModelEntity.loadModel failed: \(error). Attempting fallback.")
+                let asset = MDLAsset(url: url)
+                if asset.count == 0 {
+                    throw error
                 }
-            }.value
+                var objects: [MDLObject] = []
+                for i in 0..<asset.count {
+                    objects.append(asset.object(at: i))
+                }
+                let mesh = try MeshResource.generate(from: objects as! [MeshDescriptor])
+                let material = SimpleMaterial(color: .gray, isMetallic: false)
+                let entity = ModelEntity(mesh: mesh, materials: [material])
+                entity.name = url.lastPathComponent
+                return entity
+            }
         }
     }
     
+    @MainActor
     static func configureLoadedEntity(_ entity: Entity) {
         let bounds = entity.visualBounds(relativeTo: entity)
         let size = bounds.extents
